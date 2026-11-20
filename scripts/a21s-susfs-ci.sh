@@ -26,11 +26,11 @@ test -f arch/arm64/configs/exynos850-a21snsxx_defconfig || { echo "::error::A21s
 
 stage="retrieving upstream SUSFS 4.19"
 git clone --depth 1 --single-branch --branch kernel-4.19 https://gitlab.com/simonpunk/susfs4ksu.git susfs4ksu
-test -f susfs4ksu/fs/susfs.c || { echo "::error::Missing upstream SUSFS source."; exit 1; }
+test -f susfs4ksu/kernel_patches/fs/susfs.c || { echo "::error::Missing upstream SUSFS source."; exit 1; }
 test -f susfs4ksu/kernel_patches/50_add_susfs_in_kernel-4.19.patch
 test -f susfs4ksu/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch
-cp -v susfs4ksu/fs/susfs.c fs/susfs.c
-for f in susfs4ksu/include/linux/susfs*.h; do
+cp -v susfs4ksu/kernel_patches/fs/susfs.c fs/susfs.c
+for f in susfs4ksu/kernel_patches/include/linux/susfs*.h; do
   test -f "$f" || { echo "::error::Missing SUSFS header."; exit 1; }
   cp -v "$f" include/linux/
 done
