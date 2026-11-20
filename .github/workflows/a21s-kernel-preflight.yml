@@ -1,5 +1,8 @@
 name: A21s kernel build preflight
 on:
+  push:
+    branches: [master]
+    paths: ['.github/workflows/a21s-kernel-preflight.yml']
   workflow_dispatch:
     inputs:
       defconfig:
@@ -33,22 +36,22 @@ jobs:
           echo "KernelSU and SUSFS source indicators:"
           find . -maxdepth 6 -type f \( -iname '*susfs*' -o -path '*/KernelSU/*' -o -path '*/kernelsu/*' \) | head -60
       - name: Compile selected A21s defconfig
-        if: ${{ inputs.defconfig != '' }}
+        if: ${{ github.event_name == 'push' || inputs.defconfig != '' }}
         env:
-          DEFCONFIG: ${{ inputs.defconfig }}
+          DEFCONFIG: ${{ inputs.defconfig || 'universal3830_defconfig' }}
         shell: bash
         run: |
           set -euo pipefail
           case "$DEFCONFIG" in
             *..*|/*|*\\*) echo "Unsafe defconfig path"; exit 1;;
           esac
-          test -f "arch/arm64/configs/$DEFCONFIG" || { echo "Defconfig not found: $DEFCONFIG"; exit 1; }
+          test -f "arch/arm64/configs/$DEFCONFIG" || { echo "Missing source defconfig: $DEFCONFIG; source config or target must be restored before building."; exit 1; }
           make O=out ARCH=arm64 CC=clang LD=ld.lld CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_COMPAT=arm-linux-gnueabi- "$DEFCONFIG"
           make -j2 O=out ARCH=arm64 CC=clang LD=ld.lld CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_COMPAT=arm-linux-gnueabi- Image
           mkdir -p artifacts
           cp out/arch/arm64/boot/Image artifacts/Image
       - name: Upload compiled kernel only (never flash automatically)
-        if: ${{ inputs.defconfig != '' && success() }}
+        if: ${{ success() && (github.event_name == 'push' || inputs.defconfig != '') }}
         uses: actions/upload-artifact@v4
         with:
           name: a21s-kernel-UNTESTED
