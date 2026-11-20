@@ -1,0 +1,56 @@
+name: A21s kernel build preflight
+on:
+  workflow_dispatch:
+    inputs:
+      defconfig:
+        description: 'A21s defconfig relative to arch/arm64/configs (blank: inspect only)'
+        required: false
+        type: string
+jobs:
+  inspect-and-build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Install cross-compiler and dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential bc bison flex libssl-dev libelf-dev python3 clang lld llvm gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi binutils-aarch64-linux-gnu
+      - name: Inspect source and discover defconfigs
+        shell: bash
+        run: |
+          set -eu
+          echo "Kernel Makefile version:"
+          sed -n '1,6p' Makefile
+          echo "Declared DEFCONFIG in Samsung build config:"
+          grep "^DEFCONFIG=" build.config.universal3830 || true
+          echo "Candidate Exynos 850 / A21s configurations:"
+          find arch/arm64/configs -type f \( -iname '*850*' -o -iname '*a21*' -o -iname '*exynos*' \) | head -100
+          echo "KernelSU and SUSFS source indicators:"
+          find . -maxdepth 6 -type f \( -iname '*susfs*' -o -path '*/KernelSU/*' -o -path '*/kernelsu/*' \) | head -60
+      - name: Compile selected A21s defconfig
+        if: ${{ inputs.defconfig != '' }}
+        env:
+          DEFCONFIG: ${{ inputs.defconfig }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$DEFCONFIG" in
+            *..*|/*|*\\*) echo "Unsafe defconfig path"; exit 1;;
+          esac
+          test -f "arch/arm64/configs/$DEFCONFIG" || { echo "Defconfig not found: $DEFCONFIG"; exit 1; }
+          make O=out ARCH=arm64 CC=clang LD=ld.lld CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_COMPAT=arm-linux-gnueabi- "$DEFCONFIG"
+          make -j2 O=out ARCH=arm64 CC=clang LD=ld.lld CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_COMPAT=arm-linux-gnueabi- Image
+          mkdir -p artifacts
+          cp out/arch/arm64/boot/Image artifacts/Image
+      - name: Upload compiled kernel only (never flash automatically)
+        if: ${{ inputs.defconfig != '' && success() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: a21s-kernel-UNTESTED
+          path: artifacts/Image
+          if-no-files-found: error
