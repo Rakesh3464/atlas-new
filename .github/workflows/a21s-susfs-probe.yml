@@ -1,0 +1,32 @@
+name: A21s SUSFS patch compatibility probe (NO FLASH)
+on:
+  push:
+    branches:
+      - a21s-susfs-oneui9-build
+    paths:
+      - '.github/workflows/a21s-susfs-probe.yml'
+      - 'scripts/a21s-susfs-patch-probe.sh'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  compare:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout source plus KernelSU submodule
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Probe both SUSFS 4.19 patch revisions
+        run: bash scripts/a21s-susfs-patch-probe.sh
+      - name: Upload compatibility report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: A21s-SUSFS-Compatibility-Report-NOT-FLASHABLE
+          path: artifacts/susfs-probe/
+          if-no-files-found: warn
+          retention-days: 7
