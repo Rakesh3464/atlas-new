@@ -1,0 +1,47 @@
+name: A21s SUSFS 4.19 Kernel Build (UNTESTED)
+on:
+  push:
+    branches:
+      - a21s-susfs-oneui9-build
+    paths:
+      - '.github/workflows/a21s-susfs-build.yml'
+      - 'scripts/a21s-susfs-ci.sh'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  a21s-susfs:
+    name: Check SUSFS integration and compile ARM64
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    steps:
+      - name: Check out A21s kernel and KernelSU submodule
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Install ARM64 kernel build toolchain
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            clang-14 lld-14 llvm-14 gcc-aarch64-linux-gnu \
+            gcc-arm-linux-gnueabihf make bc bison flex libssl-dev \
+            libelf-dev build-essential cpio git patch python3
+      - name: Integrate SUSFS and compile A21s kernel (fail if incompatible)
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p artifacts
+          bash scripts/a21s-susfs-ci.sh 2>&1 | tee artifacts/build.log
+      - name: Save diagnostics and untested kernel binary if built
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: A21s-SUSFS-CI-UNTESTED-NOT-FLASHABLE
+          path: artifacts/
+          if-no-files-found: warn
+          retention-days: 7
