@@ -26,6 +26,19 @@ for ref in kernel-4.19 1.4.2-kernel-4.19; do
     echo "::endgroup::"
     continue
   fi
+  if [[ "$ref" == "1.4.2-kernel-4.19" ]]; then
+    # Atlas 4.19 has no separating blank line immediately before lock_mount_hash()
+    # in clone_mnt(); add only a whitespace context line in the disposable CI checkout.
+    python3 - <<'PY'
+from pathlib import Path
+p=Path('fs/namespace.c')
+s=p.read_text()
+old='\tmnt->mnt_parent = mnt;\n\tlock_mount_hash();\n\tlist_add_tail(&mnt->mnt_instance, &sb->s_mounts);'
+assert s.count(old)==1, "Atlas clone_mnt pattern changed, refusing automatic context adjustment"
+p.write_text(s.replace(old, '\tmnt->mnt_parent = mnt;\n\n\tlock_mount_hash();\n\tlist_add_tail(&mnt->mnt_instance, &sb->s_mounts);', 1))
+PY
+    echo "Applied whitespace-only namespace.c context adjustment in ephemeral checkout" | tee "$out/atlas-context-note.txt"
+  fi
   set +e
   patch --batch --dry-run --fuzz=2 -p1 < "$patch_path" > "$out/kernel-patch.log" 2>&1
   a=$?
@@ -41,6 +54,8 @@ for ref in kernel-4.19 1.4.2-kernel-4.19; do
   printf '%s\t%s\t%s\t%s\n' "$ref" "$a" "$b" "$failed" >> "$report"
   echo "Kernel SUSFS patch status: $a, KernelSU patch status: $b, rejected hunks: $failed"
   grep -E '(FAILED|Hunk|checking file)' "$out/kernel-patch.log" | tail -n 85 || true
+  echo "=== KernelSU patch details ($ref) ==="
+  grep -E '(FAILED|Hunk|checking file|malformed|Reversed)' "$out/ksu-patch.log" | tail -n 95 || true
   echo "::endgroup::"
 done
 echo "No file was flashed or changed. Patch compatibility only."
