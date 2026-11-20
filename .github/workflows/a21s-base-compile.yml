@@ -1,0 +1,41 @@
+name: A21s Original Kernel Compile Preflight (NO FLASH)
+on:
+  push:
+    branches: [a21s-susfs-oneui9-build]
+    paths:
+      - '.github/workflows/a21s-base-compile.yml'
+      - 'scripts/a21s-base-compile.sh'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  base-kernel:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 90
+    steps:
+      - name: Checkout A21s source and KernelSU
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Install A21s cross-compiler prerequisites
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            clang-14 lld-14 llvm-14 gcc-aarch64-linux-gnu gcc-arm-linux-gnueabihf \
+            make bc bison flex libssl-dev libelf-dev build-essential cpio git patch python3
+      - name: Compile unmodified A21s kernel for toolchain check
+        shell: bash
+        run: |
+          mkdir -p artifacts
+          set -o pipefail
+          bash scripts/a21s-base-compile.sh 2>&1 | tee artifacts/compile.log
+      - name: Save reports and UNTESTED base Image if available
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: A21s-Base-Kernel-Preflight-NOT-FLASHABLE
+          path: artifacts/
+          if-no-files-found: warn
+          retention-days: 7
