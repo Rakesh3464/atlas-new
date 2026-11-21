@@ -64,6 +64,13 @@ jobs:
           test -f "arch/arm64/configs/$DEFCONFIG" || { echo "Missing source defconfig: $DEFCONFIG; source config or target must be restored before building."; exit 1; }
           mkdir -p diagnostics
           make O=out ARCH=arm64 CC=clang LD=ld.lld CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_COMPAT=arm-linux-gnueabi- "$DEFCONFIG" 2>&1 | tee diagnostics/defconfig.log
+          echo "Validating KernelSU and SUSFS in effective .config"
+          for setting in CONFIG_KSU=y CONFIG_KSU_SUSFS=y; do
+            if ! grep -Fxq "$setting" out/.config; then
+              echo "ERROR: Required setting $setting was not enabled by Kconfig. Aborting." | tee -a diagnostics/defconfig.log
+              exit 1
+            fi
+          done
           make -j2 O=out ARCH=arm64 CC=clang LD=ld.lld CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_COMPAT=arm-linux-gnueabi- Image 2>&1 | tee diagnostics/compile.log
           mkdir -p artifacts
           cp out/arch/arm64/boot/Image artifacts/Image
