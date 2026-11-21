@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       defconfig:
-        description: 'A21s defconfig relative to arch/arm64/configs (blank: inspect only)'
+        description: 'A21s defconfig relative to arch/arm64/configs (blank: auto-select exynos850-a21snsxx_defconfig)'
         required: false
         type: string
 jobs:
@@ -45,14 +45,14 @@ jobs:
           echo "KernelSU and SUSFS source indicators:"
           find . -maxdepth 6 -type f \( -iname '*susfs*' -o -path '*/KernelSU/*' -o -path '*/kernelsu/*' \) | head -60
       - name: Apply SUSFS kernel and KernelSU integration patches
-        if: ${{ github.event_name == 'push' || inputs.defconfig != '' }}
+        if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' }}
         shell: bash
         run: |
           mkdir -p diagnostics
           set -o pipefail
           bash scripts/a21s-apply-susfs.sh 2>&1 | tee diagnostics/susfs-patch.log
       - name: Compile selected A21s defconfig
-        if: ${{ github.event_name == 'push' || inputs.defconfig != '' }}
+        if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' }}
         env:
           DEFCONFIG: ${{ inputs.defconfig || 'exynos850-a21snsxx_defconfig' }}
         shell: bash
@@ -75,7 +75,7 @@ jobs:
           mkdir -p artifacts
           cp out/arch/arm64/boot/Image artifacts/Image
       - name: Upload compiled kernel only (never flash automatically)
-        if: ${{ success() && (github.event_name == 'push' || inputs.defconfig != '') }}
+        if: ${{ success() }}
         uses: actions/upload-artifact@v4
         with:
           name: a21s-kernel-UNTESTED
