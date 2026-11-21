@@ -20,6 +20,23 @@ for f in "$kernel_patch" "$ksu_patch" "$src/fs/susfs.c" "$src/include/linux/susf
   test -s "$f" || { echo "SUSFS required file absent: $f"; exit 1; }
 done
 
+# This Samsung A21s tree has a diverged fs/Makefile. Its SUSFS object
+# is integrated separately on the port branch, so omit ONLY that upstream hunk.
+# Preserve every other hunk and fail closed on conflicts.
+if grep -Fqx 'obj-$(CONFIG_KSU_SUSFS) += susfs.o' fs/Makefile; then
+  python3 - "$kernel_patch" "$work/a21s-kernel.patch" <<'PY'
+import sys
+from pathlib import Path
+patch = Path(sys.argv[1]).read_text()
+start = patch.find("diff --git a/fs/Makefile b/fs/Makefile")
+next_file = patch.find("diff --git a/fs/dcache.c b/fs/dcache.c", start)
+if start < 0 or next_file < 0:
+    raise SystemExit("Expected upstream SUSFS Makefile/dcache diff boundaries missing")
+Path(sys.argv[2]).write_text(patch[:start] + patch[next_file:])
+PY
+  kernel_patch="$work/a21s-kernel.patch"
+fi
+
 # Check before copying anything. Never silently skip failing hunks.
 patch -p1 --dry-run --batch --forward < "$kernel_patch" || {
   echo "A21s 4.19 SUSFS kernel patch conflicts. Manual port required."; exit 1;
