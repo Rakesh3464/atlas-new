@@ -2,7 +2,9 @@ name: A21s kernel build preflight
 on:
   push:
     branches: [master]
-    paths: ['.github/workflows/a21s-kernel-preflight.yml']
+    paths:
+      - '.github/workflows/a21s-kernel-preflight.yml'
+      - 'scripts/a21s-apply-susfs.sh'
   workflow_dispatch:
     inputs:
       defconfig:
@@ -42,6 +44,9 @@ jobs:
           find arch/arm64/configs -type f \( -iname '*850*' -o -iname '*a21*' -o -iname '*exynos*' \) | head -100
           echo "KernelSU and SUSFS source indicators:"
           find . -maxdepth 6 -type f \( -iname '*susfs*' -o -path '*/KernelSU/*' -o -path '*/kernelsu/*' \) | head -60
+      - name: Apply SUSFS kernel and KernelSU integration patches
+        if: ${{ github.event_name == 'push' || inputs.defconfig != '' }}
+        run: bash scripts/a21s-apply-susfs.sh
       - name: Compile selected A21s defconfig
         if: ${{ github.event_name == 'push' || inputs.defconfig != '' }}
         env:
