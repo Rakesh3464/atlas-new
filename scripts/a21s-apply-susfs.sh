@@ -20,22 +20,39 @@ for f in "$kernel_patch" "$ksu_patch" "$src/fs/susfs.c" "$src/include/linux/susf
   test -s "$f" || { echo "SUSFS required file absent: $f"; exit 1; }
 done
 
-# This Samsung A21s tree has a diverged fs/Makefile. Its SUSFS object
-# is integrated separately on the port branch, so omit ONLY that upstream hunk.
-# Preserve every other hunk and fail closed on conflicts.
-if grep -Fqx 'obj-$(CONFIG_KSU_SUSFS) += susfs.o' fs/Makefile; then
-  python3 - "$kernel_patch" "$work/a21s-kernel.patch" <<'PY'
+# The A21s-specific adaptations are already committed to the manual-port branch.
+# Skip upstream diffs for ONLY these fully integrated files, and require
+# their markers before doing so. All other patch hunks remain fail-closed.
+grep -Fqx 'obj-$(CONFIG_KSU_SUSFS) += susfs.o' fs/Makefile || {
+  echo "Missing manually ported fs/Makefile integration"; exit 1;
+}
+grep -Fq 'ANDROID_KABI_USE(4, u64 susfs_mnt_id_backup)' include/linux/mount.h || {
+  echo "Missing manually ported mount KABI field"; exit 1;
+}
+grep -Fq 'susfs_spoof_uname(&tmp);' kernel/sys.c || {
+  echo "Missing manually ported uname hook"; exit 1;
+}
+python3 - "$kernel_patch" "$work/a21s-kernel.patch" <<'PY'
+import re
 import sys
 from pathlib import Path
-patch = Path(sys.argv[1]).read_text()
-start = patch.find("diff --git a/fs/Makefile b/fs/Makefile")
-next_file = patch.find("diff --git a/fs/dcache.c b/fs/dcache.c", start)
-if start < 0 or next_file < 0:
-    raise SystemExit("Expected upstream SUSFS Makefile/dcache diff boundaries missing")
-Path(sys.argv[2]).write_text(patch[:start] + patch[next_file:])
+
+raw = Path(sys.argv[1]).read_text()
+manual = {"fs/Makefile", "include/linux/mount.h", "kernel/sys.c"}
+parts = re.split(r"(?=^diff --git a/)", raw, flags=re.MULTILINE)
+found = set()
+kept = []
+for part in parts:
+    match = re.match(r"diff --git a/(\S+) b/", part)
+    if match and match.group(1) in manual:
+        found.add(match.group(1))
+        continue
+    kept.append(part)
+if found != manual:
+    raise SystemExit("Missing expected upstream diff sections: " + repr(manual-found))
+Path(sys.argv[2]).write_text("".join(kept))
 PY
-  kernel_patch="$work/a21s-kernel.patch"
-fi
+kernel_patch="$work/a21s-kernel.patch"
 
 # Check before copying anything. Never silently skip failing hunks.
 patch -p1 --dry-run --batch --forward < "$kernel_patch" || {
