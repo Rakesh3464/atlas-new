@@ -1,0 +1,59 @@
+name: A21s plain kernel build (without KernelSU)
+on:
+  workflow_dispatch:
+  push:
+    branches: [master]
+    paths:
+      - '.github/workflows/a21s-plain-kernel.yml'
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          submodules: false
+      - name: Install build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential bc bison flex libssl-dev libelf-dev python3 clang lld llvm gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi
+      - name: Disable missing KernelSU submodule for plain build
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f arch/arm64/configs/exynos850-a21snsxx_defconfig
+          test -f drivers/Kconfig
+          # Remove only the optional reference to the missing submodule.
+          sed -i '/^source "drivers\/kernelsu\/Kconfig"/d' drivers/Kconfig
+          sed -i '/^obj-\$(CONFIG_KSU) += kernelsu\//d' drivers/Makefile
+          sed -i '/^CONFIG_KSU=/d; /^CONFIG_KSU_MANUAL_HOOK=/d; /^CONFIG_KSU_SUSFS=/d' arch/arm64/configs/exynos850-a21snsxx_defconfig
+          printf '\n# CONFIG_KSU is not set\n# CONFIG_KSU_MANUAL_HOOK is not set\n# CONFIG_KSU_SUSFS is not set\n' >> arch/arm64/configs/exynos850-a21snsxx_defconfig
+          echo "KernelSU submodule disabled in temporary runner workspace only."
+      - name: Compile A21s kernel Image
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p logs
+          make O=out ARCH=arm64 CC=clang LD=ld.lld CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_COMPAT=arm-linux-gnueabi- exynos850-a21snsxx_defconfig 2>&1 | tee logs/defconfig.log
+          grep -Fxq '# CONFIG_KSU is not set' out/.config
+          make -j2 O=out ARCH=arm64 CC=clang LD=ld.lld CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_COMPAT=arm-linux-gnueabi- Image 2>&1 | tee logs/build.log
+          mkdir -p artifacts
+          test -s out/arch/arm64/boot/Image
+          cp out/arch/arm64/boot/Image artifacts/Image
+      - name: Upload build logs even on failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: a21s-plain-kernel-logs
+          path: logs/
+          if-no-files-found: ignore
+      - name: Upload kernel Image (NOT FLASH READY)
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: a21s-plain-kernel-UNTESTED
+          path: artifacts/Image
+          if-no-files-found: error
