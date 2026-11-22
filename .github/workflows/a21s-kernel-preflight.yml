@@ -23,6 +23,10 @@ jobs:
         with:
           persist-credentials: false
           submodules: recursive
+      - name: Verify SUSFS patch scripts before installing toolchain
+        run: |
+          bash -n scripts/a21s-apply-susfs.sh
+          python3 -m py_compile scripts/a21s-port-susfs.py
       - name: Install cross-compiler and dependencies
         run: |
           sudo apt-get update
