@@ -41,9 +41,9 @@ jobs:
           test -f KernelSU/kernel/Kconfig || { echo "KernelSU submodule missing: KernelSU/kernel/Kconfig"; exit 1; }
           test -f KernelSU/kernel/Makefile || { echo "KernelSU submodule missing: KernelSU/kernel/Makefile"; exit 1; }
           echo "Candidate Exynos 850 / A21s configurations:"
-          find arch/arm64/configs -type f \( -iname '*850*' -o -iname '*a21*' -o -iname '*exynos*' \) | head -100
+          find arch/arm64/configs -type f \( -iname '*850*' -o -iname '*a21*' -o -iname '*exynos*' \) | sed -n '1,100p'
           echo "KernelSU and SUSFS source indicators:"
-          find . -maxdepth 6 -type f \( -iname '*susfs*' -o -path '*/KernelSU/*' -o -path '*/kernelsu/*' \) | head -60
+          find . -maxdepth 6 -type f \( -iname '*susfs*' -o -path '*/KernelSU/*' -o -path '*/kernelsu/*' \) | sed -n '1,60p'
       - name: Apply SUSFS kernel and KernelSU integration patches
         if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' }}
         shell: bash
