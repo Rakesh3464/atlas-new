@@ -1,10 +1,11 @@
 name: A21s kernel build preflight
 on:
   push:
-    branches: [master]
+    branches: [master, a21s-susfs-fscontext-port-test]
     paths:
       - '.github/workflows/a21s-kernel-preflight.yml'
       - 'scripts/a21s-apply-susfs.sh'
+      - 'scripts/a21s-port-susfs.py'
   workflow_dispatch:
     inputs:
       defconfig:
