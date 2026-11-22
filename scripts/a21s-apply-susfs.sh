@@ -20,10 +20,8 @@ for f in "$kernel_patch" "$ksu_patch" "$src/fs/susfs.c" "$src/include/linux/susf
   test -s "$f" || { echo "SUSFS required file absent: $f"; exit 1; }
 done
 
-# Check before copying anything. Never silently skip failing hunks.
-patch -p1 --dry-run --batch --forward < "$kernel_patch" || {
-  echo "A21s 4.19 SUSFS kernel patch conflicts. Manual port required."; exit 1;
-}
+# Validate KernelSU compatibility. Port the upstream kernel mount hunks
+# explicitly to A21s' fs_context VFS below; never force a rejected hunk.
 (cd KernelSU && patch -p1 --dry-run --batch --forward < "$ksu_patch") || {
   echo "KernelSU version is incompatible with selected SUSFS patch. Manual port required."; exit 1;
 }
@@ -35,7 +33,7 @@ if test -f "$src/fs/sus_su.c"; then cp "$src/fs/sus_su.c" fs/sus_su.c; fi
 if test -f "$src/include/linux/sus_su.h"; then cp "$src/include/linux/sus_su.h" include/linux/sus_su.h; fi
 if test -f "$src/KernelSU/kernel/sucompat.h"; then cp "$src/KernelSU/kernel/sucompat.h" KernelSU/kernel/sucompat.h; fi
 
-patch -p1 --batch --forward < "$kernel_patch"
+python3 scripts/a21s-port-susfs.py "$kernel_patch"
 (cd KernelSU && patch -p1 --batch --forward < "$ksu_patch")
 
 # A21s already uses manual hooks: avoid double SUS_SU hook where available.
