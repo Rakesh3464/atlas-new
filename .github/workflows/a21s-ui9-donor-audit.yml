@@ -28,7 +28,7 @@ jobs:
             rm -f donor.zip
             python3 -m pip install --user --quiet gdown
             export PATH="$HOME/.local/bin:$PATH"
-            gdown --fuzzy \
+            gdown \
               'https://drive.google.com/file/d/1ed87QvTjOgiGnPhmMsRbexbWhUWjtjKY/view?usp=drive_link' \
               --output donor.zip
           fi
