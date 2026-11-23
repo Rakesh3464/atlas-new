@@ -1,0 +1,280 @@
+name: A21s One UI 9 EXPERIMENTAL ROM assembly (DO NOT FLASH)
+on:
+  push:
+    branches: [a21s-ui9-experimental-assembly]
+    paths:
+      - '.github/workflows/a21s-ui9-experimental-build.yml'
+      - 'scripts/a21s_ui9_assemble_experimental.py'
+      - 'scripts/a21s_ui9_verify_experimental.py'
+  workflow_dispatch:
+jobs:
+  experimental-rom-build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout audited build scripts (not kernel tree)
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          submodules: false
+          sparse-checkout: |
+            scripts/a21s_ui9_assemble_experimental.py
+            scripts/a21s_ui9_verify_experimental.py
+            scripts/a21s_ui9_erofs_to_ext4.py
+            scripts/a21s_ui9_donor_vendor_compat.py
+          sparse-checkout-cone-mode: false
+      - name: Install Android partition tools and dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq erofs-utils e2fsprogs rsync zstd android-sdk-libsparse-utils
+          mkdir -p inputs outputs/rom reports parts work tools
+          python3 -m pip install --user --quiet gdown
+          export PATH="$HOME/.local/bin:$PATH"
+          curl --fail --location --retry 2 \
+            'https://raw.githubusercontent.com/Rprop/aosp15_partition_tools/5e92a5d504de33414318ced8bad5507440bb8c30/linux_glibc_x86_64/lpmake' \
+            --output tools/lpmake
+          test "$(stat -c %s tools/lpmake)" -gt 4000000
+          chmod 755 tools/lpmake
+          file tools/lpmake
+          tools/lpmake --help || true
+      - name: Download exact known Donor ROM and three target files
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PATH="$HOME/.local/bin:$PATH"
+          gdown '1ed87QvTjOgiGnPhmMsRbexbWhUWjtjKY' --output inputs/donor.zip
+          gdown '1WtbOVAksZW5TTLHT1UuWOyhBwu0IyH3s' --output inputs/vendor.zip
+          gdown '1ehvAvZ4RvP3ioyUB9f_GOK3Xig1CRkLX' --output inputs/boot.img
+          gdown '1ZiHTsh87S1WclmkDabLzZEFQToqVcsq0' --output inputs/dtbo.img
+          echo '60a39482f3baba166627c4b784ad103fc0f10f83c36148291fb91071bcf7eb86  inputs/donor.zip' | sha256sum -c -
+          echo '39c3315fa5f164e1ddeba3fd2cfae85240e21a5ac61d8287d34e0b1b42136385  inputs/vendor.zip' | sha256sum -c -
+          echo '924d4b84802c5909cf7b4dc3f30382b4c7e35c1791a4ea344a179e4218a70632  inputs/boot.img' | sha256sum -c -
+          echo 'acedb9d9e174e1348740150244ff0534610edf30f804538c7cc8c714013f8c29  inputs/dtbo.img' | sha256sum -c -
+      - name: Extract donor super into temporary build storage only
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import zipfile,shutil
+          from pathlib import Path
+          with zipfile.ZipFile("inputs/donor.zip") as z:
+              images=[i for i in z.infolist() if i.filename.rsplit("/",1)[-1]=="super.img"]
+              if len(images)!=1 or images[0].file_size!=6382682112:
+                  raise ValueError("Unexpected donor super.img")
+              with z.open(images[0]) as src,Path("inputs/donor-super.img").open("wb") as dst:
+                  shutil.copyfileobj(src,dst,16*1024*1024)
+          PY
+          rm -f inputs/donor.zip
+          df -h .
+      - name: Convert donor EROFS product to ext4 with metadata and label checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo python3 scripts/a21s_ui9_erofs_to_ext4.py \
+            inputs/donor-super.img \
+            inputs/product.ext4.img \
+            reports/product-conversion.md
+          test "$(stat -c %s inputs/product.ext4.img)" -eq 1719664640
+          sudo chown "$(id -u):$(id -g)" inputs/product.ext4.img
+      - name: Assemble preliminary 10GB SUPER prototype (never flashable)
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/a21s_ui9_assemble_experimental.py \
+            inputs/donor-super.img \
+            inputs/vendor.zip \
+            inputs/boot.img \
+            inputs/dtbo.img \
+            inputs/product.ext4.img \
+            tools/lpmake \
+            outputs/rom \
+            reports
+          file outputs/rom/super-10GB-GUESS-UNVERIFIED.img
+      - name: Verify sparse SUPER contents match all source partition checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          simg2img outputs/rom/super-10GB-GUESS-UNVERIFIED.img work/expanded-super.img
+          python3 scripts/a21s_ui9_verify_experimental.py \
+            work/expanded-super.img \
+            outputs/rom/BUILD_MANIFEST.json
+          rm -f work/expanded-super.img
+      - name: Compress and split candidate ROM payload for GitHub distribution
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s\n' 'A21s One UI9 experimental image assembly; not flash-ready. Do not flash.' > reports/DO_NOT_FLASH.txt
+          tar -C outputs/rom -cf - . \
+            | zstd -T0 -10 --long=27 --no-progress \
+            | split -b 450M -d -a 2 - parts/A21s-OneUI9-EXPERIMENTAL.tar.zst.part-
+          cat parts/A21s-OneUI9-EXPERIMENTAL.tar.zst.part-* | zstd --test --quiet
+          sha256sum parts/A21s-OneUI9-EXPERIMENTAL.tar.zst.part-* > reports/PART_CHECKSUMS.sha256
+          ls -lah parts/
+          cat > reports/HOW_TO_REASSEMBLE.txt <<'EOF'
+          WARNING: This is NOT flash-ready. Do not flash super/boot/dtbo.
+          Download all parts, extract individual GitHub Artifact ZIPs into ONE folder.
+          Then on a Linux computer / Termux (with zstd, tar):
+          cat A21s-OneUI9-EXPERIMENTAL.tar.zst.part-* > A21s-OneUI9-EXPERIMENTAL.tar.zst
+          zstd -d --stdout A21s-OneUI9-EXPERIMENTAL.tar.zst | tar -xvf -
+          This extracts experimental super, stock boot, stock dtbo and manifest.
+          Do not flash until exact A21s PIT super size/LP geometry and VINTF/AVB/SELinux/boot checks pass.
+          EOF
+      - name: Upload build reports and manifest first
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: A21s-UI9-EXPERIMENTAL-REPORTS-NOT-FLASHABLE
+          path: |
+            reports/
+            outputs/rom/BUILD_MANIFEST.json
+            outputs/rom/DO_NOT_FLASH_README.txt
+          if-no-files-found: ignore
+          retention-days: 7
+      - name: Upload ROM package part 00 (EXPERIMENTAL)
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: A21s-OneUI9-EXPERIMENTAL-PART-00
+          path: parts/A21s-OneUI9-EXPERIMENTAL.tar.zst.part-00
+          if-no-files-found: ignore
+          compression-level: 0
+          retention-days: 7
+      - name: Upload ROM package part 01 (EXPERIMENTAL)
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: A21s-OneUI9-EXPERIMENTAL-PART-01
+          path: parts/A21s-OneUI9-EXPERIMENTAL.tar.zst.part-01
+          if-no-files-found: ignore
+          compression-level: 0
+          retention-days: 7
+      - name: Upload ROM package part 02 (EXPERIMENTAL)
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: A21s-OneUI9-EXPERIMENTAL-PART-02
+          path: parts/A21s-OneUI9-EXPERIMENTAL.tar.zst.part-02
+          if-no-files-found: ignore
+          compression-level: 0
+          retention-days: 7
+      - name: Upload ROM package part 03 (EXPERIMENTAL)
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: A21s-OneUI9-EXPERIMENTAL-PART-03
+          path: parts/A21s-OneUI9-EXPERIMENTAL.tar.zst.part-03
+          if-no-files-found: ignore
+          compression-level: 0
+          retention-days: 7
+      - name: Upload ROM package part 04 (EXPERIMENTAL)
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: A21s-OneUI9-EXPERIMENTAL-PART-04
+          path: parts/A21s-OneUI9-EXPERIMENTAL.tar.zst.part-04
+          if-no-files-found: ignore
+          compression-level: 0
+          retention-days: 7
+      - name: Upload ROM package part 05 (EXPERIMENTAL)
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: A21s-OneUI9-EXPERIMENTAL-PART-05
+          path: parts/A21s-OneUI9-EXPERIMENTAL.tar.zst.part-05
+          if-no-files-found: ignore
+          compression-level: 0
+          retention-days: 7
+      - name: Upload ROM package part 06 (EXPERIMENTAL)
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: A21s-OneUI9-EXPERIMENTAL-PART-06
+          path: parts/A21s-OneUI9-EXPERIMENTAL.tar.zst.part-06
+          if-no-files-found: ignore
+          compression-level: 0
+          retention-days: 7
+      - name: Upload ROM package part 07 (EXPERIMENTAL)
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: A21s-OneUI9-EXPERIMENTAL-PART-07
+          path: parts/A21s-OneUI9-EXPERIMENTAL.tar.zst.part-07
+          if-no-files-found: ignore
+          compression-level: 0
+          retention-days: 7
+      - name: Upload ROM package part 08 (EXPERIMENTAL)
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: A21s-OneUI9-EXPERIMENTAL-PART-08
+          path: parts/A21s-OneUI9-EXPERIMENTAL.tar.zst.part-08
+          if-no-files-found: ignore
+          compression-level: 0
+          retention-days: 7
+      - name: Upload ROM package part 09 (EXPERIMENTAL)
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: A21s-OneUI9-EXPERIMENTAL-PART-09
+          path: parts/A21s-OneUI9-EXPERIMENTAL.tar.zst.part-09
+          if-no-files-found: ignore
+          compression-level: 0
+          retention-days: 7
+      - name: Upload ROM package part 10 (EXPERIMENTAL)
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: A21s-OneUI9-EXPERIMENTAL-PART-10
+          path: parts/A21s-OneUI9-EXPERIMENTAL.tar.zst.part-10
+          if-no-files-found: ignore
+          compression-level: 0
+          retention-days: 7
+      - name: Upload ROM package part 11 (EXPERIMENTAL)
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: A21s-OneUI9-EXPERIMENTAL-PART-11
+          path: parts/A21s-OneUI9-EXPERIMENTAL.tar.zst.part-11
+          if-no-files-found: ignore
+          compression-level: 0
+          retention-days: 7
+      - name: Upload ROM package part 12 (EXPERIMENTAL)
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: A21s-OneUI9-EXPERIMENTAL-PART-12
+          path: parts/A21s-OneUI9-EXPERIMENTAL.tar.zst.part-12
+          if-no-files-found: ignore
+          compression-level: 0
+          retention-days: 7
+      - name: Upload ROM package part 13 (EXPERIMENTAL)
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: A21s-OneUI9-EXPERIMENTAL-PART-13
+          path: parts/A21s-OneUI9-EXPERIMENTAL.tar.zst.part-13
+          if-no-files-found: ignore
+          compression-level: 0
+          retention-days: 7
+      - name: Upload ROM package part 14 (EXPERIMENTAL)
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: A21s-OneUI9-EXPERIMENTAL-PART-14
+          path: parts/A21s-OneUI9-EXPERIMENTAL.tar.zst.part-14
+          if-no-files-found: ignore
+          compression-level: 0
+          retention-days: 7
+      - name: Upload ROM package part 15 (EXPERIMENTAL)
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: A21s-OneUI9-EXPERIMENTAL-PART-15
+          path: parts/A21s-OneUI9-EXPERIMENTAL.tar.zst.part-15
+          if-no-files-found: ignore
+          compression-level: 0
+          retention-days: 7
