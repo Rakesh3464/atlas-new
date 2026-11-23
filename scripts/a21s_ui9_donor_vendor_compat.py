@@ -106,13 +106,22 @@ def select_props(contents):
 def read_report_for_fs(label,img,lines):
     lines.extend(["","## "+label,f"Image: {img}"])
     if str(img).startswith("/dev/loop"):
-        block=run_cmd(["sudo","dd","if="+str(img),"bs=2048","count=1","status=none"],timeout=15)
-        magic=(block.stdout[1080:1082] if block and block.returncode==0 else b"")
+        block=run_cmd(["sudo","dd","if="+str(img),"bs=4096","count=1","status=none"],timeout=15)
+        prefix=(block.stdout if block and block.returncode==0 else b"")
     else:
         with Path(img).open("rb") as f:
-            f.seek(1080)
-            magic=f.read(2)
-    lines.append(f"ext4 magic at 1080: {magic.hex()}"+(" PASS" if magic==b"\x53\xef" else " OTHER"))
+            prefix=f.read(4096)
+    magic=prefix[1080:1082]
+    lines.append(f"Filesystem prefix byte 0-4: {prefix[:4].hex()}")
+    lines.append(f"Filesystem magic at 1024-1028: {prefix[1024:1028].hex()}")
+    lines.append(f"ext4 magic at 1080: {magic.hex()}"+(" PASS" if magic==b"\\x53\\xef" else " OTHER"))
+    probes=run_cmd((["sudo"] if str(img).startswith("/dev/loop") else [])+["blkid","-p","-o","export",str(img)],timeout=20)
+    if probes:
+        lines.append("blkid filesystem probe: "+probes.stdout.decode("utf-8","replace").strip()[:500])
+    if prefix[1024:1028] == bytes.fromhex("e2e1f5e0"):
+        lines.append("EROFs filesystem signature detected: A21s stock fstab expects product ext4. FORMAT CONVERSION REQUIRED BEFORE MOUNT.")
+    if prefix[1024:1028] == bytes.fromhex("1020f5f2"):
+        lines.append("F2FS filesystem signature detected: A21s stock fstab expects ext4.")
     if magic!=b"\x53\xef":
         lines.append("Unsupported filesystem for debugfs-based property audit")
         return {},[]
