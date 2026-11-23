@@ -35,8 +35,28 @@ jobs:
           test "$(stat -c %s donor.zip)" -gt 1000000000
           file donor.zip
           sha256sum donor.zip | tee reports/donor-sha256.txt
-          # Check against the published hash for SkyUI Cirrus 9.0 (SourceForge).
-          echo 'a55f42e8e515ca9ab1d047e538f8ad37580cbee8e7c6e05e2298355be3f12b2e  donor.zip' | sha256sum -c -
+          # SHA256 is recorded, but do not compare against an unverified expected hash.
+          # Full ZIP CRC validation detects truncated/corrupted entries.
+          python3 - <<'PY'
+          from pathlib import Path
+          import zipfile
+          report=Path("reports/donor-zip-integrity.txt")
+          with zipfile.ZipFile("donor.zip") as z:
+              infos=z.infolist()
+              total=sum(i.file_size for i in infos)
+              if total > 150_000_000_000:
+                  raise ValueError("Suspiciously large uncompressed archive; refusing CRC scan")
+              bad=z.testzip()
+              if bad is not None:
+                  report.write_text(f"CRC test FAILED: {bad}\\n")
+                  raise RuntimeError(f"CRC test failed for {bad}")
+              report.write_text(
+                  f"ZIP CRC PASS\\nEntries: {len(infos)}\\n"
+                  f"Uncompressed bytes: {total}\\n"
+                  "Origin: user-provided Google Drive link; publisher SHA256 not independently verified\\n"
+              )
+              print(report.read_text())
+          PY
       - name: Inspect partition candidates without extracting or flashing
         shell: bash
         run: |
