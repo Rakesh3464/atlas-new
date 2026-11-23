@@ -1,0 +1,68 @@
+name: A21s One UI 9 target input preflight (NO FLASH)
+on:
+  workflow_dispatch:
+    inputs:
+      boot_drive_id:
+        description: 'Shared Google Drive file ID of A21s boot.img'
+        required: true
+        type: string
+      dtbo_drive_id:
+        description: 'Shared Google Drive file ID of A21s dtbo.img'
+        required: true
+        type: string
+      vendor_drive_id:
+        description: 'Shared Google Drive file ID of A21s vendor.zip'
+        required: true
+        type: string
+jobs:
+  inspect-a21s-target:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 35
+    permissions:
+      contents: read
+    env:
+      BOOT_ID: "${{ inputs.boot_drive_id }}"
+      DTBO_ID: "${{ inputs.dtbo_drive_id }}"
+      VENDOR_ID: "${{ inputs.vendor_drive_id }}"
+    steps:
+      - name: Checkout audit script (no source modifications)
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          sparse-checkout: scripts/a21s_ui9_input_audit.py
+          sparse-checkout-cone-mode: false
+          submodules: false
+      - name: Fetch A21s inputs from shared Google Drive file IDs
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p inputs reports
+          python3 - <<'PY'
+          import os, re
+          for name in ("BOOT_ID", "DTBO_ID", "VENDOR_ID"):
+              value=os.environ[name]
+              if not re.fullmatch(r"[A-Za-z0-9_-]{15,120}", value):
+                  raise SystemExit(f"Invalid Google Drive file ID in {name}")
+          PY
+          python3 -m pip install --user --quiet gdown
+          export PATH="$HOME/.local/bin:$PATH"
+          gdown "$BOOT_ID" --output inputs/boot.img
+          gdown "$DTBO_ID" --output inputs/dtbo.img
+          gdown "$VENDOR_ID" --output inputs/vendor.zip
+          test "$(stat -c %s inputs/boot.img)" -gt 1000000
+          test "$(stat -c %s inputs/dtbo.img)" -gt 1024
+          test "$(stat -c %s inputs/vendor.zip)" -gt 1000000
+      - name: Inspect boot DTBO and vendor ZIP read-only
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/a21s_ui9_input_audit.py \
+            inputs/boot.img inputs/dtbo.img inputs/vendor.zip \
+            reports/a21s-inputs.md
+      - name: Upload reports only (never publish user binary images)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: a21s-input-audit-NOT-FLASHABLE
+          path: reports/
+          if-no-files-found: ignore
