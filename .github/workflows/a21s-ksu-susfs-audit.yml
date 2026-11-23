@@ -1,0 +1,29 @@
+name: A21s 4.19 KernelSU SUSFS readiness audit
+on:
+  push:
+    branches: [a21s-419-ksu-susfs]
+  workflow_dispatch:
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Inspect source and integration
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p report
+          make kernelversion | tee report/kernel-version.txt
+          git submodule status | tee report/submodules.txt
+          find arch/arm64/configs -type f | grep -Ei 'a21|exynos850|universal3830' | tee report/config-candidates.txt || true
+          grep -RInE 'CONFIG_KSU|CONFIG_KSU_SUSFS|CONFIG_SUSFS' arch/arm64/configs fs/Kconfig drivers/Kconfig 2>/dev/null | head -100 > report/config-integration.txt || true
+          find . -maxdepth 5 -iname '*susfs*' -print > report/susfs-files.txt
+          grep -RIn 'KernelSU' drivers/Makefile drivers/Kconfig fs/Makefile 2>/dev/null > report/ksu-hooks.txt || true
+          echo 'Audit only; this does not install SUSFS or produce a flashable kernel.' > report/NOTICE.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: a21s-419-ksu-susfs-audit
+          path: report/
