@@ -1,0 +1,43 @@
+name: A21s input preflight smoke test
+on:
+  push:
+    branches: [a21s-ui9-donor-audit]
+    paths:
+      - 'scripts/a21s_ui9_input_audit.py'
+      - '.github/workflows/a21s-ui9-input-smoke.yml'
+  workflow_dispatch:
+jobs:
+  validate-audit-tool:
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          submodules: false
+          sparse-checkout: scripts/a21s_ui9_input_audit.py
+          sparse-checkout-cone-mode: false
+      - name: Construct synthetic test images (not device images)
+        run: |
+          python3 - <<'PY'
+          import struct, zipfile
+          from pathlib import Path
+          Path("fixtures").mkdir()
+          boot=bytearray(1024 * 1024)
+          boot[0:8]=b"ANDROID!"
+          struct.pack_into("<I", boot, 8, 131072)
+          struct.pack_into("<I", boot, 36, 4096)
+          Path("fixtures/boot.img").write_bytes(boot)
+          dtbo=bytearray(4096)
+          struct.pack_into(">8I", dtbo, 0, 0xd7b7ab1e, 4096, 32, 32, 1, 32, 4096, 0)
+          Path("fixtures/dtbo.img").write_bytes(dtbo)
+          with zipfile.ZipFile("fixtures/vendor.zip", "w") as z:
+              z.writestr("vendor/build.prop", "ro.vndk.version=31\nro.product.vendor.device=a21s\n")
+          PY
+      - name: Execute audit on synthetic inputs (no flashing)
+        run: |
+          python3 scripts/a21s_ui9_input_audit.py \
+            fixtures/boot.img fixtures/dtbo.img fixtures/vendor.zip \
+            reports/smoke.md
+          grep -F 'Input signature checks passed: 3 / 3' reports/smoke.md
