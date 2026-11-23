@@ -12,6 +12,13 @@ jobs:
     permissions:
       contents: read
     steps:
+      - name: Checkout only the read-only audit script
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          submodules: false
+          sparse-checkout: scripts/ui9_super_audit.py
+          sparse-checkout-cone-mode: false
       - name: Prepare report directory
         run: mkdir -p reports
       - name: Download publicly released SkyUI Cirrus 9.0 donor ZIP
@@ -115,6 +122,11 @@ jobs:
               (out / "donor-audit.md").write_text("\n".join(lines) + "\n")
               print("\n".join(lines))
           PY
+      - name: Inspect dynamic partitions inside donor super.img (no extraction or flash)
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ui9_super_audit.py donor.zip reports/super-partitions.md
       - name: Upload audit and logs (even if download failed)
         if: always()
         uses: actions/upload-artifact@v4
