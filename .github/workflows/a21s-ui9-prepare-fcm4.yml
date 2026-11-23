@@ -1,0 +1,36 @@
+name: A21s OneUI9 FCM4 official preparation (NO FLASH)
+on:
+  push:
+    branches: [a21s-ui9-fcm4-vndk31-fixprep]
+    paths:
+      - 'scripts/a21s_ui9_prepare_fcm4.py'
+      - '.github/workflows/a21s-ui9-prepare-fcm4.yml'
+  workflow_dispatch:
+jobs:
+  prepare-fcm4:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout source-only preparation code
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          submodules: false
+          sparse-checkout: scripts/a21s_ui9_prepare_fcm4.py
+          sparse-checkout-cone-mode: false
+      - name: Download, parse and SHA256 official AOSP historical FCM level 4
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/a21s_ui9_prepare_fcm4.py reports
+          test -s reports/A21s-OneUI9-FCM4-SOURCE-PREP-NOT-FLASHABLE.zip
+      - name: Upload FCM4 analysis-only source pack
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: A21s-OneUI9-FCM4-OFFICIAL-SOURCE-ONLY
+          path: reports/A21s-OneUI9-FCM4-SOURCE-PREP-NOT-FLASHABLE.zip
+          compression-level: 0
+          retention-days: 7
