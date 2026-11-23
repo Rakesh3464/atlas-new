@@ -18,14 +18,25 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          curl --fail --location --retry 2 --retry-delay 5 \
+          echo "Attempting public SourceForge download"
+          if ! curl --fail --location --retry 1 --retry-delay 4 \
             --connect-timeout 30 --max-time 3000 \
             --user-agent 'Mozilla/5.0' \
             'https://sourceforge.net/projects/skyui-rom/files/Cirrus/SkyUI%20Cirrus%209.0%20-%20M21%20M31%20M31s%20F41.zip/download' \
-            --output donor.zip
+            --output donor.zip; then
+            echo "SourceForge download blocked; trying the user-provided Google Drive file"
+            rm -f donor.zip
+            python3 -m pip install --user --quiet gdown
+            export PATH="$HOME/.local/bin:$PATH"
+            gdown --fuzzy \
+              'https://drive.google.com/file/d/1ed87QvTjOgiGnPhmMsRbexbWhUWjtjKY/view?usp=drive_link' \
+              --output donor.zip
+          fi
           test "$(stat -c %s donor.zip)" -gt 1000000000
           file donor.zip
           sha256sum donor.zip | tee reports/donor-sha256.txt
+          # Check against the published hash for SkyUI Cirrus 9.0 (SourceForge).
+          echo 'a55f42e8e515ca9ab1d047e538f8ad37580cbee8e7c6e05e2298355be3f12b2e  donor.zip' | sha256sum -c -
       - name: Inspect partition candidates without extracting or flashing
         shell: bash
         run: |
