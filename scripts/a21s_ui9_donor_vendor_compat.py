@@ -105,9 +105,13 @@ def select_props(contents):
 
 def read_report_for_fs(label,img,lines):
     lines.extend(["","## "+label,f"Image: {img}"])
-    with Path(img).open("rb") as f:
-        f.seek(1080)
-        magic=f.read(2)
+    if str(img).startswith("/dev/loop"):
+        block=run_cmd(["sudo","dd","if="+str(img),"bs=2048","count=1","status=none"],timeout=15)
+        magic=(block.stdout[1080:1082] if block and block.returncode==0 else b"")
+    else:
+        with Path(img).open("rb") as f:
+            f.seek(1080)
+            magic=f.read(2)
     lines.append(f"ext4 magic at 1080: {magic.hex()}"+(" PASS" if magic==b"\x53\xef" else " OTHER"))
     if magic!=b"\x53\xef":
         lines.append("Unsupported filesystem for debugfs-based property audit")
