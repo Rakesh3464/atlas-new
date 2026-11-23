@@ -36,6 +36,16 @@ jobs:
           clang --version | head -1 | tee logs/toolchain.txt
           make O=out ARCH=arm64 LLVM=1 exynos850-a21snsxx_defconfig 2>&1 | tee logs/config.log
           make -j2 O=out ARCH=arm64 LLVM=1 Image 2>&1 | tee logs/build.log
+      - name: Verify baseline Image and record checksum
+        if: success()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s out/arch/arm64/boot/Image
+          file out/arch/arm64/boot/Image | tee logs/image-type.txt
+          stat -c '%n %s bytes' out/arch/arm64/boot/Image | tee logs/image-size.txt
+          sha256sum out/arch/arm64/boot/Image | tee logs/image-sha256.txt
+          echo 'Baseline only: KernelSU and SUSFS are not verified in this Image.' | tee logs/image-notice.txt
       - name: Upload logs and kernel if compile succeeds
         if: always()
         uses: actions/upload-artifact@v4
