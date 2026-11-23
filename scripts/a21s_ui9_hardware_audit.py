@@ -51,6 +51,76 @@ def audit_boot(path):
     ]
     return out
 
+
+def inspect_boot_ramdisk(path):
+    """Read the stock boot ramdisk in memory; never unpack it to an output image."""
+    import gzip
+    out=["## Boot ramdisk fstab and mount metadata"]
+    data=Path(path).read_bytes()
+    if data[:8]!=b"ANDROID!":
+        return out+["Boot header unknown"]
+    page=u32_le(data,36)
+    kernel=u32_le(data,8)
+    rsize=u32_le(data,16)
+    if page not in (2048,4096,8192,16384) or rsize>64*MIB:
+        return out+["Invalid legacy boot layout"]
+    offset=page+((kernel+page-1)//page)*page
+    if offset+rsize>len(data):
+        return out+["Ramdisk outside boot image"]
+    blob=data[offset:offset+rsize]
+    out.append(f"Ramdisk offset: {offset}, bytes: {rsize}")
+    out.append(f"Ramdisk signature: {blob[:12].hex()}")
+    if blob.startswith(b"\x1f\x8b"):
+        decoded=gzip.decompress(blob)
+        out.append("Ramdisk compression: gzip")
+    elif blob.startswith(b"\x04\x22\x4d\x18") or blob.startswith(b"\x02\x21\x4c\x18"):
+        kind="lz4"
+        if not shutil.which(kind):
+            return out+["LZ4 ramdisk detected; lz4 tool unavailable"]
+        p=subprocess.run(["lz4","-d","-c"],input=blob,capture_output=True,timeout=30)
+        if p.returncode: return out+["Could not decode LZ4 ramdisk"]
+        decoded=p.stdout
+        out.append("Ramdisk compression: lz4")
+    else:
+        decoded=blob
+        out.append("Ramdisk compression: raw/unknown")
+    if len(decoded)>128*MIB:
+        return out+["Refusing oversized ramdisk"]
+    i=0
+    matches=[]
+    while i+110<=len(decoded):
+        hdr=decoded[i:i+110]
+        if hdr[:6] not in (b"070701",b"070702"):
+            if i==0: out.append("No cpio newc entries detected")
+            break
+        try:
+            size=int(hdr[54:62],16)
+            nsize=int(hdr[94:102],16)
+        except ValueError:
+            break
+        if nsize<1 or nsize>4096 or size>80*MIB: break
+        name_bytes=decoded[i+110:i+110+nsize]
+        name=name_bytes.split(b"\x00",1)[0].decode("utf-8","replace")
+        dstart=(i+110+nsize+3)//4*4
+        dend=dstart+size
+        if dend>len(decoded):break
+        if name=="TRAILER!!!":break
+        if ("fstab" in name.lower() or name.lower().endswith(".rc")) and size<256*1024:
+            contents=decoded[dstart:dend].decode("utf-8","replace")
+            hits=[line.strip() for line in contents.splitlines() if
+                 ("fstab" in name.lower() and
+                  any(q in line.split() for q in ("/system","/vendor","/product","/odm")))
+                 or ("fstab" in line and name.lower().endswith(".rc"))]
+            if hits: matches.append((name,hits[:30]))
+        i=(dend+3)//4*4
+    if matches:
+        for name,hits in matches:
+            out.append(f"File: {name}")
+            out.extend("  "+line[:500] for line in hits)
+    else:
+        out.append("No system/vendor/product/odm fstab lines discovered in ramdisk cpio")
+    return out
+
 def audit_dtbo(path):
     data=Path(path).read_bytes()[:80]
     out=["## DTBO image",f"Size: {Path(path).stat().st_size} bytes"]
@@ -127,6 +197,9 @@ def audit_vendor(vendor_zip):
         lines.append(f"Expanded vendor image format: {kind}")
     if kind!="raw ext4":
         return lines+["No ext4 metadata inspection performed (unsupported filesystem)."]
+    if shutil.which("resize2fs"):
+        estimate=subprocess.run(["resize2fs","-P",str(tmp)],capture_output=True,text=True,errors="replace",timeout=60)
+        lines.append("Ext4 minimum size estimate (read-only): "+(estimate.stdout+estimate.stderr).strip()[:1200])
     lines.append("Read-only debugfs inspection:")
     props={}
     for prop in ("/build.prop","/vendor/build.prop","/default.prop","/etc/build.prop"):
@@ -173,6 +246,7 @@ def main():
        ""
     ]
     lines+=audit_boot(boot)+[""]
+    lines+=inspect_boot_ramdisk(boot)+[""]
     lines+=audit_dtbo(dtbo)+[""]
     lines+=audit_vendor(vendor)+[""]
     lines+=["## Verdict","This report is diagnostic only. Flash-ready status: NO.",
