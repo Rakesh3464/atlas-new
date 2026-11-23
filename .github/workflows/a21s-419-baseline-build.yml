@@ -15,6 +15,17 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y bc bison flex build-essential libssl-dev libelf-dev clang lld llvm python3
+      - name: Preflight KernelSU source wiring
+        shell: bash
+        run: |
+          mkdir -p logs
+          git submodule status | tee logs/submodules.txt
+          if grep -q 'source "drivers/kernelsu/Kconfig"' drivers/Kconfig && [ ! -f drivers/kernelsu/Kconfig ]; then
+            echo 'ERROR: drivers/Kconfig references missing drivers/kernelsu/Kconfig' | tee logs/preflight.txt
+            echo 'KernelSU integration must be repaired before baseline compilation.' | tee -a logs/preflight.txt
+            exit 1
+          fi
+          echo 'KernelSU Kconfig path check passed' | tee logs/preflight.txt
       - name: Compile existing A21s config without inventing SUSFS integration
         shell: bash
         run: |
