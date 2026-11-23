@@ -1,0 +1,79 @@
+name: A21s OneUI9 VNDK31 FCM4 system_ext full paths (READ ONLY)
+on:
+  push:
+    branches: [a21s-ui9-vndk31-full-path-audit]
+    paths:
+      - 'scripts/a21s_ui9_vndk31_full_path_scan.py'
+      - '.github/workflows/a21s-ui9-vndk31-full-path.yml'
+  workflow_dispatch:
+jobs:
+  check-systemext:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 80
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout read-only super scanner
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          submodules: false
+          sparse-checkout: |
+            scripts/a21s_ui9_vndk31_full_path_scan.py
+            scripts/a21s_ui9_donor_vendor_compat.py
+          sparse-checkout-cone-mode: false
+      - name: Download and verify known donor package
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p inputs reports
+          python3 -m pip install --user --quiet gdown
+          export PATH="$HOME/.local/bin:$PATH"
+          gdown '1ed87QvTjOgiGnPhmMsRbexbWhUWjtjKY' --output inputs/donor.zip
+          echo '60a39482f3baba166627c4b784ad103fc0f10f83c36148291fb91071bcf7eb86  inputs/donor.zip' | sha256sum -c -
+      - name: List potential extra system_ext and VNDK payloads from ZIP metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import zipfile
+          with zipfile.ZipFile('inputs/donor.zip') as z:
+              names=z.namelist()
+              hits=[n for n in names if any(q in n.lower() for q in ('system_ext','vndk','apex','vintf'))]
+              lines=['# Donor ZIP outer entries of possible VNDK relevance','']
+              lines.extend('- '+x for x in hits[:200])
+              if not hits:
+                  lines.append('None. The contents of logical partition images are scanned separately.')
+              Path('reports/donor-zip-vndk-candidates.md').write_text('\n'.join(lines)+'\n')
+              print('\n'.join(lines))
+          PY
+      - name: Extract audited donor super temporarily (NO FLASH)
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import shutil,zipfile
+          from pathlib import Path
+          with zipfile.ZipFile('inputs/donor.zip') as z:
+              images=[i for i in z.infolist() if i.filename.rsplit('/',1)[-1]=='super.img']
+              if len(images)!=1 or images[0].file_size!=6382682112:
+                  raise ValueError('Donor super image is not the audited version')
+              with z.open(images[0]) as src,Path('inputs/donor-super.img').open('wb') as dst:
+                  shutil.copyfileobj(src,dst,16*1024*1024)
+          Path('inputs/donor.zip').unlink()
+          PY
+      - name: Mount each donor partition READ ONLY and scan nested system_ext
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/a21s_ui9_vndk31_full_path_scan.py \
+            inputs/donor-super.img reports
+      - name: Upload report only without donor binaries
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: A21s-OneUI9-VNDK31-FCM4-FULL-PATH-AUDIT-NOT-FLASHABLE
+          path: reports/
+          if-no-files-found: ignore
+          retention-days: 7
