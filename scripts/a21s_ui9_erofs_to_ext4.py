@@ -109,6 +109,11 @@ def main(super_path,outimg,report):
                     "-E","lazy_itable_init=0,lazy_journal_init=0",outimg)
                 cmd("mount","-t","ext4","-o","loop",outimg,dst)
                 ext4_mounted=True
+                # mkfs.ext4 adds an empty lost+found not present in the donor.
+                # Remove it so a --delete dry-run can verify exact contents.
+                lostfound=dst/"lost+found"
+                if lostfound.is_dir():
+                    lostfound.rmdir()
                 cmd("rsync","-aHAX","--numeric-ids","--one-file-system",
                     "--",str(src)+"/",str(dst)+"/")
                 # -c verifies contents, -H hardlinks, -A ACLs, -X xattrs.
