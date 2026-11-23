@@ -1,0 +1,87 @@
+name: Convert SkyUI 9 product EROFS to ext4 (NOT FLASHABLE)
+on:
+  push:
+    branches: [a21s-ui9-product-ext4]
+    paths:
+      - '.github/workflows/a21s-ui9-erofs-to-ext4.yml'
+      - 'scripts/a21s_ui9_erofs_to_ext4.py'
+  workflow_dispatch:
+jobs:
+  convert-product:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout isolated conversion scripts
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          submodules: false
+          sparse-checkout: |
+            scripts/a21s_ui9_erofs_to_ext4.py
+            scripts/a21s_ui9_donor_vendor_compat.py
+          sparse-checkout-cone-mode: false
+      - name: Install read-only EROFS and ext4 tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq erofs-utils e2fsprogs rsync zstd
+          mkdir -p inputs outputs reports
+      - name: Fetch and verify user-shared SkyUI Cirrus 9 donor
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m pip install --quiet --user gdown
+          export PATH="$HOME/.local/bin:$PATH"
+          gdown '1ed87QvTjOgiGnPhmMsRbexbWhUWjtjKY' --output inputs/donor.zip
+          echo '60a39482f3baba166627c4b784ad103fc0f10f83c36148291fb91071bcf7eb86  inputs/donor.zip' | sha256sum -c -
+          python3 - <<'PY'
+          import shutil, zipfile
+          from pathlib import Path
+          zpath=Path("inputs/donor.zip")
+          with zipfile.ZipFile(zpath) as z:
+              entries=[i for i in z.infolist() if i.filename.rsplit("/",1)[-1]=="super.img"]
+              if len(entries)!=1 or entries[0].file_size!=6382682112:
+                  raise ValueError("Unexpected donor super.img")
+              with z.open(entries[0]) as src, Path("inputs/donor-super.img").open("wb") as dst:
+                  shutil.copyfileobj(src,dst,16*1024*1024)
+          zpath.unlink()
+          PY
+          df -h .
+      - name: Convert only donor product EROFS to ext4 and verify metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo python3 scripts/a21s_ui9_erofs_to_ext4.py \
+            inputs/donor-super.img \
+            outputs/product.ext4.img \
+            reports/a21s-product-ext4-audit.md
+      - name: Compress converted product image with Zstandard
+        shell: bash
+        run: |
+          set -euo pipefail
+          zstd -T0 -10 --long=27 --no-progress --force \
+            outputs/product.ext4.img -o outputs/product.ext4.img.zst
+          zstd --test outputs/product.ext4.img.zst
+          sha256sum outputs/product.ext4.img outputs/product.ext4.img.zst | tee reports/checksums.sha256
+          echo 'Product partition conversion only; NOT a flashable A21s ROM' > reports/NOT-FLASHABLE.txt
+          ls -lah outputs
+      - name: Upload read-only conversion report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: a21s-ui9-erofs-ext4-audit
+          path: reports/
+          if-no-files-found: ignore
+          retention-days: 7
+      - name: Upload converted ext4 product image (NOT flashable ROM)
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: a21s-ui9-product-ext4-IMAGE-ONLY-NOT-FLASHABLE
+          path: outputs/product.ext4.img.zst
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
