@@ -20,10 +20,14 @@ jobs:
           mkdir -p inputs reports
           python3 -m pip install --user --quiet gdown
           export PATH="$HOME/.local/bin:$PATH"
-          gdown '1ehvAvZ4RvP3ioyUB9f_GOK3Xig1CRkLX' --output inputs/link1.bin
-          gdown '1ZiHTsh87S1WclmkDabLzZEFQToqVcsq0' --output inputs/link2.bin
-          test -s inputs/link1.bin
-          test -s inputs/link2.bin
+          if ! gdown '1ehvAvZ4RvP3ioyUB9f_GOK3Xig1CRkLX' --output inputs/link1.bin; then
+            echo 'Link 1: Google Drive download unavailable (possibly sharing permission).' > reports/link1-download.txt
+            rm -f inputs/link1.bin
+          fi
+          if ! gdown '1ZiHTsh87S1WclmkDabLzZEFQToqVcsq0' --output inputs/link2.bin; then
+            echo 'Link 2: Google Drive download unavailable (possibly sharing permission).' > reports/link2-download.txt
+            rm -f inputs/link2.bin
+          fi
       - name: Identify file types and compare uploaded A21s file sizes (read only)
         shell: bash
         run: |
@@ -42,6 +46,9 @@ jobs:
                '']
           for n in (1,2):
               p=Path(f'inputs/link{n}.bin')
+              if not p.is_file() or p.stat().st_size==0:
+                  out.extend([f'## Google Drive link {n}', 'ACCESS FAILED: download unavailable; sharing permissions or Drive quota may block access.', ''])
+                  continue
               size=p.stat().st_size
               with p.open('rb') as f: head=f.read(4096)
               digest=hashlib.sha256()
