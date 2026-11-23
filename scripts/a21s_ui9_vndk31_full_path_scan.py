@@ -16,7 +16,7 @@ import zipfile
 from xml.etree import ElementTree as ET
 from a21s_ui9_donor_vendor_compat import lp_partitions, expose_partition
 
-EXPECTED_SUPER=6382682112
+EXPECTED_SUPER=10737418240
 MIB=1048576
 
 def run(cmd):
@@ -90,7 +90,7 @@ def main():
     args=p.parse_args()
     donor=args.super.resolve()
     if donor.stat().st_size!=EXPECTED_SUPER:
-        raise ValueError("Unverified donor super.img size")
+        raise ValueError("Unexpected validated 10GiB experimental super raw size")
     args.reportdir.mkdir(parents=True,exist_ok=True)
     parts=lp_partitions(donor)
     sections=[]
@@ -107,7 +107,7 @@ def main():
             mount=work/("mnt_"+partition)
             mount.mkdir()
             # EROFS product was confirmed in earlier official conversion run.
-            fs_type="erofs" if partition=="product" else "ext4"
+            fs_type="ext4"  # The experimental product was verified converted from EROFS to ext4
             options="ro,nodev,nosuid" if fs_type=="erofs" else "ro,noload,nodev,nosuid"
             mounted=False
             try:
@@ -136,7 +136,7 @@ def main():
     fcm=any(x.get("fcm4_matrices") for x in sections)
     data={"target":"A21s SM-A217F / Android12 VNDK31 FCM4",
           "donor":"SkyUI Cirrus 9 Android17 M21 M31 family",
-          "source":"verified donor super.img",
+          "source":"10GiB experimental assembly from audited donor partitions plus A21s vendor; NOT FLASHABLE",
           "scan":sections,
           "vndk31_location_detected":present,
           "fcm4_location_detected":fcm,
