@@ -107,7 +107,7 @@ def main():
     group_capacity=9_000_000_000
     args=[lpmake,"--metadata-size","65536",
           "--super-name","super","--metadata-slots","2",
-          "--device",f"super:{ASSUMED_DEVICE_SIZE}",
+          "--device-size",str(ASSUMED_DEVICE_SIZE),
           "--alignment",str(MIB),"--group",f"group_basic:{group_capacity}",
           "--block-size","4096"]
     for name,img in images.items():
