@@ -13,6 +13,13 @@ jobs:
     permissions:
       contents: read
     steps:
+      - name: Checkout hardware audit script
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          submodules: false
+          sparse-checkout: scripts/a21s_ui9_hardware_audit.py
+          sparse-checkout-cone-mode: false
       - name: Download all three user-shared files independently
         shell: bash
         run: |
@@ -102,6 +109,16 @@ jobs:
           Path('reports/a21s-three-drive-links.md').write_text(report)
           print(report)
           PY
+      - name: Audit target boot DTBO vendor VNDK and VINTF (no flash)
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s inputs/link1.bin
+          test -s inputs/link2.bin
+          test -s inputs/link3.bin
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq e2fsprogs android-sdk-libsparse-utils || true
+          python3 scripts/a21s_ui9_hardware_audit.py inputs/link1.bin inputs/link2.bin inputs/link3.bin reports/a21s-hardware-preflight.md
       - name: Upload metadata report ONLY
         if: always()
         uses: actions/upload-artifact@v4
