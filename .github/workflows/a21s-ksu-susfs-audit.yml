@@ -17,6 +17,9 @@ jobs:
           mkdir -p report
           make kernelversion | tee report/kernel-version.txt
           git submodule status | tee report/submodules.txt
+          test -f drivers/kernelsu/Kconfig && echo 'KernelSU Kconfig present' > report/ksu-path-check.txt || echo 'WARNING: drivers/Kconfig references missing drivers/kernelsu/Kconfig' > report/ksu-path-check.txt
+          test -f drivers/kernelsu/Makefile && echo 'KernelSU Makefile present' >> report/ksu-path-check.txt || echo 'WARNING: drivers/kernelsu/Makefile missing' >> report/ksu-path-check.txt
+          grep -E '^CONFIG_(KSU|KSU_SUSFS|SUSFS)=' arch/arm64/configs/exynos850-a21snsxx_defconfig > report/a21s-ksu-config.txt || true
           find arch/arm64/configs -type f | grep -Ei 'a21|exynos850|universal3830' | tee report/config-candidates.txt || true
           grep -RInE 'CONFIG_KSU|CONFIG_KSU_SUSFS|CONFIG_SUSFS' arch/arm64/configs fs/Kconfig drivers/Kconfig 2>/dev/null | head -100 > report/config-integration.txt || true
           find . -maxdepth 5 -iname '*susfs*' -print > report/susfs-files.txt
