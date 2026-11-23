@@ -1,0 +1,31 @@
+name: A21s One UI 9 - 10 GB super fit gate (NO FLASH)
+on:
+  push:
+    branches: [a21s-ui9-10gb-super-sizing]
+    paths:
+      - 'scripts/a21s_ui9_size_gate.py'
+      - '.github/workflows/a21s-ui9-super-size-gate.yml'
+  workflow_dispatch:
+jobs:
+  check-sizes:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          sparse-checkout: scripts/a21s_ui9_size_gate.py
+          sparse-checkout-cone-mode: false
+      - name: Evaluate fit for decimal 10 GB and binary 10 GiB
+        run: |
+          set -euo pipefail
+          python3 scripts/a21s_ui9_size_gate.py
+      - name: Save diagnostic-only report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: a21s-10GB-super-fit-NOT-FLASHABLE
+          path: reports/
+          if-no-files-found: ignore
