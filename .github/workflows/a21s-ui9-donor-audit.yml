@@ -1,0 +1,93 @@
+name: A21s One UI 9 donor partition audit (NO FLASH)
+on:
+  push:
+    branches: [a21s-ui9-donor-audit]
+    paths:
+      - '.github/workflows/a21s-ui9-donor-audit.yml'
+  workflow_dispatch:
+jobs:
+  audit-donor:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    steps:
+      - name: Prepare report directory
+        run: mkdir -p reports
+      - name: Download publicly released SkyUI Cirrus 9.0 donor ZIP
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 2 --retry-delay 5 \
+            --connect-timeout 30 --max-time 3000 \
+            --user-agent 'Mozilla/5.0' \
+            'https://sourceforge.net/projects/skyui-rom/files/Cirrus/SkyUI%20Cirrus%209.0%20-%20M21%20M31%20M31s%20F41.zip/download' \
+            --output donor.zip
+          test "$(stat -c %s donor.zip)" -gt 1000000000
+          file donor.zip
+          sha256sum donor.zip | tee reports/donor-sha256.txt
+      - name: Inspect partition candidates without extracting or flashing
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import zipfile
+          from pathlib import Path
+
+          out = Path("reports")
+          out.mkdir(exist_ok=True)
+          partitions = [
+              "system", "system_ext", "product", "odm", "vendor",
+              "boot", "dtbo", "vbmeta", "vendor_boot", "super", "recovery"
+          ]
+          with zipfile.ZipFile("donor.zip") as z:
+              entries = z.infolist()
+              (out / "donor-manifest.txt").write_text(
+                  "\n".join(f"{i.file_size:>13} {i.filename}" for i in entries) + "\n"
+              )
+              lines = [
+                  "# SkyUI Cirrus 9.0 donor audit for A21s SM-A217F",
+                  "",
+                  f"ZIP entries: {len(entries)}",
+                  "Donor devices: M21 / M31 / M31s / F41 (not A21s).",
+                  "A21s Exynos 850 hardware files must NOT be replaced by Exynos 9611 donor boot, dtbo, or vendor.",
+                  "",
+                  "## Partition candidate files",
+              ]
+              for name in partitions:
+                  matches = []
+                  for item in entries:
+                      filename = item.filename.rsplit("/", 1)[-1].lower()
+                      if filename == name or filename.startswith(name + ".") or filename.startswith(name + "_"):
+                          matches.append(item)
+                  lines.append(f"### {name}: {len(matches)} candidate(s)")
+                  for item in matches[:30]:
+                      lines.append(f"- {item.filename} ({item.file_size} bytes)")
+                  if len(matches) > 30:
+                      lines.append(f"- ... and {len(matches)-30} more")
+              special = [
+                  i.filename for i in entries if (
+                      i.filename.endswith("payload.bin")
+                      or i.filename.endswith("updater-script")
+                      or "dynamic_partitions_op_list" in i.filename
+                      or "super_empty.img" in i.filename
+                  )
+              ]
+              lines.extend(["", "## Installer / payload candidates"])
+              lines.extend(f"- {x}" for x in special[:50])
+              lines.extend([
+                  "", "## Safety",
+                  "This is an ARCHIVE CONTENT AUDIT ONLY. No ROM, boot image, or flashable ZIP was built.",
+                  "Do not flash donor M21/M31 kernel/DTBO/vendor to A21s.",
+                  "A21s boot.img, dtbo.img, vendor.zip and actual partition sizes need separate compatibility checks.",
+              ])
+              (out / "donor-audit.md").write_text("\n".join(lines) + "\n")
+              print("\n".join(lines))
+          PY
+      - name: Upload audit and logs (even if download failed)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: a21s-ui9-donor-audit-NOT-FLASHABLE
+          path: reports/
+          if-no-files-found: ignore
