@@ -1,0 +1,35 @@
+name: A21s 4.19 baseline kernel compile
+on:
+  push:
+    branches: [a21s-419-ksu-susfs]
+  workflow_dispatch:
+jobs:
+  baseline:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Install compiler dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bc bison flex build-essential libssl-dev libelf-dev clang lld llvm python3
+      - name: Compile existing A21s config without inventing SUSFS integration
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p logs
+          clang --version | head -1 | tee logs/toolchain.txt
+          make O=out ARCH=arm64 LLVM=1 exynos850-a21snsxx_defconfig 2>&1 | tee logs/config.log
+          make -j2 O=out ARCH=arm64 LLVM=1 Image 2>&1 | tee logs/build.log
+      - name: Upload logs and kernel if compile succeeds
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: a21s-419-baseline-build
+          path: |
+            logs/
+            out/.config
+            out/arch/arm64/boot/Image
+          if-no-files-found: ignore
