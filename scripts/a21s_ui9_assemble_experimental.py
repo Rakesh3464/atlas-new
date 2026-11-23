@@ -28,7 +28,7 @@ PARTITIONS={"system":4878610432,"odm":20971520}
 VENDOR_SIZE=846389248
 PRODUCT_EXT4_SIZE=1719664640
 SUPER_INPUT_SIZE=6382682112
-ASSUMED_DEVICE_SIZE=(10_000_000_000//4096)*4096
+ASSUMED_DEVICE_SIZE=10_737_418_240  # From user-provided super partition screenshot; not independently verified
 
 def checksum(path):
     h=hashlib.sha256()
@@ -103,7 +103,7 @@ def main():
     }
     sizes={k:v.stat().st_size for k,v in images.items()}
     if sum(sizes.values())+128*MIB>=ASSUMED_DEVICE_SIZE:
-        raise ValueError("Images too large for assumed 10GB device")
+        raise ValueError("Images too large for screenshot-reported 10GiB super device")
     group_capacity=(9_000_000_000//4096)*4096
     args=[lpmake,"--metadata-size","65536",
           "--super-name","super","--metadata-slots","2",
@@ -113,7 +113,7 @@ def main():
     for name,img in images.items():
         size=img.stat().st_size
         args+=["--partition",f"{name}:readonly:{size}:group_basic","--image",f"{name}={img}"]
-    result=output/"super-10GB-GUESS-UNVERIFIED.img"
+    result=output/"super-10GiB-PHOTO-UNVERIFIED.img"
     args+=["--sparse","--output",result]
     run(args)
     with result.open("rb") as f:
@@ -126,7 +126,7 @@ def main():
     notice=(
         "SAMSUNG GALAXY A21s SM-A217F - ONE UI 9 EXPERIMENTAL ASSEMBLY\n"
         "!!! THIS IS NOT FLASH-READY, DO NOT FLASH !!!\n"
-        "Generated with a GUESSED ~10GB physical super size (rounded down to 4096 bytes);\n"
+        "Generated with 10,737,418,240-byte super size from user-provided partition screenshot;\n"
         "actual target PIT/LP geometry, boot/SELinux/VINTF, AVB have NOT been validated.\n"
         "This assembly combines donor Android 17 system/product/odm with\n"
         "Android 12 VNDK31 A21s vendor, boot and dtbo. Hardware is not tested.\n"
@@ -140,7 +140,7 @@ def main():
       "donor":"SkyUI Cirrus 9 M21/M31/M31s/F41",
       "donor_android":"17 (API 37)",
       "target_vendor_android":"12 (API31/VNDK31)",
-      "user_reported_super":"10 GB",
+      "user_reported_super":"10 GiB = 10,737,418,240 bytes (user-provided screenshot; not independently verified)",
       "lpmake_assumed_device_size_bytes":ASSUMED_DEVICE_SIZE,
       "metadata_slots_assumed":2,
       "images":{k:{"byte_size":v.stat().st_size,"sha256":checksum(v)} for k,v in images.items()},
@@ -152,7 +152,7 @@ def main():
       "verified_bootable":False,
       "safe_to_flash":False,
       "warnings":[
-          "Assumed super geometry may be wrong: physical super size not verified",
+          "Super size comes from user-provided screenshot, but actual physical blockdev size, LP group metadata, and exact device identity not independently verified",
           "Donor framework Android 17 and VNDK31 Android12 target compatibility not established",
           "No Android on-device boot, VINTF or SELinux policy check",
           "No Odin/TWRP install script is provided for this UNTESTED assembly",
