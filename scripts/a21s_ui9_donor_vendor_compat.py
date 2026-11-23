@@ -114,7 +114,7 @@ def read_report_for_fs(label,img,lines):
     magic=prefix[1080:1082]
     lines.append(f"Filesystem prefix byte 0-4: {prefix[:4].hex()}")
     lines.append(f"Filesystem magic at 1024-1028: {prefix[1024:1028].hex()}")
-    lines.append(f"ext4 magic at 1080: {magic.hex()}"+(" PASS" if magic==b"\\x53\\xef" else " OTHER"))
+    lines.append(f"ext4 magic at 1080: {magic.hex()}"+(" PASS" if magic==bytes.fromhex("53ef") else " OTHER"))
     probes=run_cmd((["sudo"] if str(img).startswith("/dev/loop") else [])+["blkid","-p","-o","export",str(img)],timeout=20)
     if probes:
         lines.append("blkid filesystem probe: "+probes.stdout.decode("utf-8","replace").strip()[:500])
