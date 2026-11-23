@@ -1,10 +1,11 @@
-name: A21s three Drive inputs - identify only (NO FLASH)
+name: A21s VNDK31 port hardware preflight (NO FLASH)
 on:
   push:
     branches:
       - a21s-ui9-shared-input-audit
     paths:
       - '.github/workflows/a21s-ui9-shared-input-audit.yml'
+      - 'scripts/a21s_ui9_hardware_audit.py'
   workflow_dispatch:
 jobs:
   identify-shared-files:
@@ -117,7 +118,7 @@ jobs:
           test -s inputs/link2.bin
           test -s inputs/link3.bin
           sudo apt-get update -qq
-          sudo apt-get install -y -qq e2fsprogs android-sdk-libsparse-utils || true
+          sudo apt-get install -y -qq e2fsprogs android-sdk-libsparse-utils lz4 || true
           python3 scripts/a21s_ui9_hardware_audit.py inputs/link1.bin inputs/link2.bin inputs/link3.bin reports/a21s-hardware-preflight.md
       - name: Upload metadata report ONLY
         if: always()
