@@ -77,13 +77,13 @@ def run_cmd(args,timeout=60):
         return None
 
 def debugfs_read(img,path):
-    r=run_cmd(["debugfs","-R","cat "+path,str(img)],timeout=45)
+    r=run_cmd((["sudo"] if str(img).startswith("/dev/loop") else [])+["debugfs","-R","cat "+path,str(img)],timeout=45)
     if r is None or r.returncode!=0 or not r.stdout:
         return ""
     return r.stdout[:1500000].decode("utf-8","replace")
 
 def debugfs_ls(img,path):
-    r=run_cmd(["debugfs","-R","ls -p "+path,str(img)],timeout=30)
+    r=run_cmd((["sudo"] if str(img).startswith("/dev/loop") else [])+["debugfs","-R","ls -p "+path,str(img)],timeout=30)
     if r is None or r.returncode!=0:
         return ""
     return r.stdout[:25000].decode("utf-8","replace")
