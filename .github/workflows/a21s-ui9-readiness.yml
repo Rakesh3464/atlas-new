@@ -1,0 +1,67 @@
+name: A21s One UI9 VNDK31 / FCM4 / SELinux gate (NO FLASH)
+on:
+  push:
+    branches: [a21s-ui9-boot-readiness-audit]
+    paths:
+      - 'scripts/a21s_ui9_readiness_audit.py'
+      - '.github/workflows/a21s-ui9-readiness.yml'
+  workflow_dispatch:
+jobs:
+  readiness:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 75
+    permissions:
+      contents: read
+    steps:
+      - name: Read only auditor code
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          submodules: false
+          sparse-checkout: |
+            scripts/a21s_ui9_readiness_audit.py
+            scripts/a21s_ui9_donor_vendor_compat.py
+          sparse-checkout-cone-mode: false
+      - name: Download SHA256-pinned donor and A21s VNDK31 vendor
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p inputs reports
+          python3 -m pip install --user --quiet gdown
+          export PATH="$HOME/.local/bin:$PATH"
+          gdown '1ed87QvTjOgiGnPhmMsRbexbWhUWjtjKY' --output inputs/donor.zip
+          gdown '1WtbOVAksZW5TTLHT1UuWOyhBwu0IyH3s' --output inputs/vendor.zip
+          echo '60a39482f3baba166627c4b784ad103fc0f10f83c36148291fb91071bcf7eb86  inputs/donor.zip' | sha256sum -c -
+          echo '39c3315fa5f164e1ddeba3fd2cfae85240e21a5ac61d8287d34e0b1b42136385  inputs/vendor.zip' | sha256sum -c -
+      - name: Extract donor super.img to temporary analysis storage
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import shutil
+          from pathlib import Path
+          import zipfile
+          with zipfile.ZipFile("inputs/donor.zip") as z:
+              candidate=[i for i in z.infolist() if i.filename.rsplit("/",1)[-1]=="super.img"]
+              if len(candidate)!=1 or candidate[0].file_size!=6382682112:
+                  raise ValueError("Unknown donor super.img")
+              with z.open(candidate[0]) as source, Path("inputs/donor-super.img").open("wb") as dest:
+                  shutil.copyfileobj(source,dest,16*1024*1024)
+          Path("inputs/donor.zip").unlink()
+          PY
+      - name: Inspect donor VNDK31, FCM4 and SELinux compatibility candidates
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/a21s_ui9_readiness_audit.py \
+            inputs/donor-super.img \
+            inputs/vendor.zip \
+            reports/a21s-ui9-readiness.md
+      - name: Publish text-only audit reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: A21s-OneUI9-Readiness-NOT-FLASHABLE
+          path: reports/
+          if-no-files-found: ignore
+          retention-days: 7
