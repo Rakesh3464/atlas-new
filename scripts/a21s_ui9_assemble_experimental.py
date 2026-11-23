@@ -28,7 +28,7 @@ PARTITIONS={"system":4878610432,"odm":20971520}
 VENDOR_SIZE=846389248
 PRODUCT_EXT4_SIZE=1719664640
 SUPER_INPUT_SIZE=6382682112
-ASSUMED_DEVICE_SIZE=10_000_000_000
+ASSUMED_DEVICE_SIZE=(10_000_000_000//4096)*4096
 
 def checksum(path):
     h=hashlib.sha256()
@@ -104,7 +104,7 @@ def main():
     sizes={k:v.stat().st_size for k,v in images.items()}
     if sum(sizes.values())+128*MIB>=ASSUMED_DEVICE_SIZE:
         raise ValueError("Images too large for assumed 10GB device")
-    group_capacity=9_000_000_000
+    group_capacity=(9_000_000_000//4096)*4096
     args=[lpmake,"--metadata-size","65536",
           "--super-name","super","--metadata-slots","2",
           "--device-size",str(ASSUMED_DEVICE_SIZE),
@@ -126,7 +126,7 @@ def main():
     notice=(
         "SAMSUNG GALAXY A21s SM-A217F - ONE UI 9 EXPERIMENTAL ASSEMBLY\n"
         "!!! THIS IS NOT FLASH-READY, DO NOT FLASH !!!\n"
-        "Generated with a GUESSED 10,000,000,000-byte physical super size;\n"
+        "Generated with a GUESSED ~10GB physical super size (rounded down to 4096 bytes);\n"
         "actual target PIT/LP geometry, boot/SELinux/VINTF, AVB have NOT been validated.\n"
         "This assembly combines donor Android 17 system/product/odm with\n"
         "Android 12 VNDK31 A21s vendor, boot and dtbo. Hardware is not tested.\n"
