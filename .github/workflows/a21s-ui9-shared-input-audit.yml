@@ -1,0 +1,100 @@
+name: A21s shared Google Drive files - identify only (NO FLASH)
+on:
+  push:
+    branches:
+      - a21s-ui9-shared-input-audit
+    paths:
+      - '.github/workflows/a21s-ui9-shared-input-audit.yml'
+  workflow_dispatch:
+jobs:
+  identify-shared-files:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      - name: Download the two user-shared files
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p inputs reports
+          python3 -m pip install --user --quiet gdown
+          export PATH="$HOME/.local/bin:$PATH"
+          gdown '1ehvAvZ4RvP3ioyUB9f_GOK3Xig1CRkLX' --output inputs/link1.bin
+          gdown '1ZiHTsh87S1WclmkDabLzZEFQToqVcsq0' --output inputs/link2.bin
+          test -s inputs/link1.bin
+          test -s inputs/link2.bin
+      - name: Identify file types and compare uploaded A21s file sizes (read only)
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib, zipfile, struct
+          from pathlib import Path
+          expected = {
+            37748736: 'previously uploaded boot.img (size match only)',
+            8388608: 'previously uploaded dtbo.img (size match only)',
+            480361676: 'previously uploaded vendor.zip (size match only)'
+          }
+          out=['# A21s shared-file identification', '',
+               'READ-ONLY: no image rewriting, flashing, partition modifications or ROM build.',
+               'File names are inferred only from magic bytes, archive structure, and size.',
+               '']
+          for n in (1,2):
+              p=Path(f'inputs/link{n}.bin')
+              size=p.stat().st_size
+              with p.open('rb') as f: head=f.read(4096)
+              digest=hashlib.sha256()
+              with p.open('rb') as f:
+                  for chunk in iter(lambda: f.read(2**20), b''): digest.update(chunk)
+              if head[:8]==b'ANDROID!':
+                  kind='Android boot.img (ANDROID! header)'
+              elif len(head)>4 and int.from_bytes(head[:4],'big')==0xd7b7ab1e:
+                  kind='Android dtbo.img (DTBO magic)'
+              elif zipfile.is_zipfile(p):
+                  kind='ZIP archive'
+              elif head[:4]==b'\x3a\xff\x26\xed':
+                  kind='Android sparse image'
+              elif len(head)>1082 and head[1080:1082]==b'\x53\xef':
+                  kind='ext4 filesystem image'
+              elif len(head)>1028 and head[1024:1028]==b'\xe2\xe1\xf5\xe0':
+                  kind='EROFS filesystem image'
+              else:
+                  kind='Unknown file format; manual analysis required'
+              out.extend([
+                  f'## Google Drive link {n}',
+                  f'File ID: ' + ('1ehvAvZ4RvP3ioyUB9f_GOK3Xig1CRkLX' if n==1 else '1ZiHTsh87S1WclmkDabLzZEFQToqVcsq0'),
+                  f'Byte size: {size} ({size / 2**20:.2f} MiB)',
+                  f'SHA-256: {digest.hexdigest()}',
+                  f'Header hex (first 16 bytes): {head[:16].hex()}',
+                  f'Identified type: {kind}',
+                  f'Prior uploaded file: {expected.get(size, "no exact-size match")}', ''
+              ])
+              if kind=='ZIP archive':
+                  with zipfile.ZipFile(p) as z:
+                      infos=z.infolist()
+                      out.append(f'ZIP entry count: {len(infos)}')
+                      out.append(f'ZIP uncompressed bytes: {sum(x.file_size for x in infos)}')
+                      out.append('Largest ZIP entries:')
+                      for x in sorted(infos,key=lambda x:x.file_size,reverse=True)[:20]:
+                          out.append(f'- {x.filename}: {x.file_size} bytes')
+                      out.append('')
+          out.extend([
+              '## Remaining port steps',
+              '- Verify all three A21s inputs boot.img, dtbo.img, vendor.zip are available.',
+              '- Determine target A21s super partition size and existing LP metadata.',
+              '- Validate donor system/product/odm against A21s VNDK31, VINTF and HALs.',
+              '- Repack only after partition sizing, filesystem and boot configuration review.',
+              '- This is not a flash-ready ROM.'
+          ])
+          report='\n'.join(out)+'\n'
+          Path('reports/a21s-two-drive-links.md').write_text(report)
+          print(report)
+          PY
+      - name: Upload metadata report ONLY
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: a21s-two-drive-links-NOT-FLASHABLE
+          path: reports/
+          if-no-files-found: ignore
