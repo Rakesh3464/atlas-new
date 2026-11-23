@@ -1,4 +1,4 @@
-name: A21s shared Google Drive files - identify only (NO FLASH)
+name: A21s three Drive inputs - identify only (NO FLASH)
 on:
   push:
     branches:
@@ -13,7 +13,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - name: Download the two user-shared files
+      - name: Download all three user-shared files independently
         shell: bash
         run: |
           set -euo pipefail
@@ -27,6 +27,10 @@ jobs:
           if ! gdown '1ZiHTsh87S1WclmkDabLzZEFQToqVcsq0' --output inputs/link2.bin; then
             echo 'Link 2: Google Drive download unavailable (possibly sharing permission).' > reports/link2-download.txt
             rm -f inputs/link2.bin
+          fi
+          if ! gdown '1WtbOVAksZW5TTLHT1UuWOyhBwu0IyH3s' --output inputs/link3.bin; then
+            echo 'Link 3: Google Drive download unavailable (possibly sharing permission).' > reports/link3-download.txt
+            rm -f inputs/link3.bin
           fi
       - name: Identify file types and compare uploaded A21s file sizes (read only)
         shell: bash
@@ -44,7 +48,7 @@ jobs:
                'READ-ONLY: no image rewriting, flashing, partition modifications or ROM build.',
                'File names are inferred only from magic bytes, archive structure, and size.',
                '']
-          for n in (1,2):
+          for n in (1,2,3):
               p=Path(f'inputs/link{n}.bin')
               if not p.is_file() or p.stat().st_size==0:
                   out.extend([f'## Google Drive link {n}', 'ACCESS FAILED: download unavailable; sharing permissions or Drive quota may block access.', ''])
@@ -70,7 +74,7 @@ jobs:
                   kind='Unknown file format; manual analysis required'
               out.extend([
                   f'## Google Drive link {n}',
-                  f'File ID: ' + ('1ehvAvZ4RvP3ioyUB9f_GOK3Xig1CRkLX' if n==1 else '1ZiHTsh87S1WclmkDabLzZEFQToqVcsq0'),
+                  f'File ID: ' + {1: '1ehvAvZ4RvP3ioyUB9f_GOK3Xig1CRkLX', 2: '1ZiHTsh87S1WclmkDabLzZEFQToqVcsq0', 3: '1WtbOVAksZW5TTLHT1UuWOyhBwu0IyH3s'}[n],
                   f'Byte size: {size} ({size / 2**20:.2f} MiB)',
                   f'SHA-256: {digest.hexdigest()}',
                   f'Header hex (first 16 bytes): {head[:16].hex()}',
@@ -95,13 +99,13 @@ jobs:
               '- This is not a flash-ready ROM.'
           ])
           report='\n'.join(out)+'\n'
-          Path('reports/a21s-two-drive-links.md').write_text(report)
+          Path('reports/a21s-three-drive-links.md').write_text(report)
           print(report)
           PY
       - name: Upload metadata report ONLY
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: a21s-two-drive-links-NOT-FLASHABLE
+          name: a21s-three-drive-links-NOT-FLASHABLE
           path: reports/
           if-no-files-found: ignore
