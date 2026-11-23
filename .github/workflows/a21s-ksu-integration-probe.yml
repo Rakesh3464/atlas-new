@@ -1,0 +1,35 @@
+name: A21s KernelSU integration probe
+on:
+  workflow_dispatch:
+  push:
+    branches: [a21s-419-ksu-susfs]
+jobs:
+  probe:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Diagnose existing KernelSU integration
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p report
+          git submodule status > report/submodules.txt
+          find KernelSU -maxdepth 4 -type f \( -name Kconfig -o -name Makefile \) | sort > report/ksu-build-files.txt || true
+          find drivers/kernelsu -maxdepth 2 -type f 2>/dev/null | head -40 > report/driver-ksu-files.txt || true
+          grep -n 'kernelsu' drivers/Kconfig drivers/Makefile > report/ksu-references.txt || true
+          grep -E '^(CONFIG_KSU|CONFIG_KSU_SUSFS|CONFIG_SUSFS)=' arch/arm64/configs/exynos850-a21snsxx_defconfig > report/ksu-defconfig.txt || true
+          if [ -f drivers/kernelsu/Kconfig ] && [ -f drivers/kernelsu/Makefile ]; then
+            echo 'KernelSU integration path exists' > report/assessment.txt
+          elif [ -f KernelSU/kernel/Kconfig ] && [ -f KernelSU/kernel/Makefile ]; then
+            echo 'KernelSU source exists under KernelSU/kernel but drivers/kernelsu integration path is absent; integration required' > report/assessment.txt
+          else
+            echo 'KernelSU build sources not confirmed at expected paths; inspect submodule revision and layout before patching' > report/assessment.txt
+          fi
+          cat report/assessment.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: a21s-ksu-integration-probe
+          path: report/
