@@ -1,0 +1,40 @@
+name: A21s SUSFS 4.19 port staging
+on:
+  workflow_dispatch:
+jobs:
+  stage:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Stage SUSFS reference and capture conflicts
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p report
+          git clone --no-checkout https://gitlab.com/simonpunk/susfs4ksu.git /tmp/susfs
+          git -C /tmp/susfs checkout --detach 001e69919c6271f690fd00b17e4c721c9e599152
+          cp /tmp/susfs/kernel_patches/50_add_susfs_in_kernel-4.19.patch report/reference-kernel-419.patch
+          if [ -f /tmp/susfs/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch ]; then
+            cp /tmp/susfs/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch report/reference-ksu.patch
+          fi
+          set +e
+          patch --batch -p1 < report/reference-kernel-419.patch > report/kernel-apply.log 2>&1
+          echo $? > report/kernel-exit-code.txt
+          if [ -f report/reference-ksu.patch ]; then
+            (cd KernelSU && patch --batch -p1 < ../report/reference-ksu.patch) > report/ksu-apply.log 2>&1
+            echo $? > report/ksu-exit-code.txt
+          fi
+          set -e
+          find fs include kernel KernelSU -name '*.rej' -o -name '*.orig' | sort > report/reject-list.txt
+          tar -czf report/rejects.tar.gz -T report/reject-list.txt
+          git diff --binary > report/kernel-partial.patch || true
+          git -C KernelSU diff --binary > report/ksu-partial.patch || true
+          printf '%s\n' 'PARTIAL REFERENCE PATCHES ONLY. SUSFS v1.5.5 reference, NOT v2.4.0. No kernel build or flashable image.' > report/NOTICE.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: a21s-susfs-port-staging
+          path: report/
