@@ -1,10 +1,11 @@
 name: A21s kernel build preflight
 on:
   push:
-    branches: [master]
+    branches: [master, a21s-susfs-fscontext-port-test]
     paths:
       - '.github/workflows/a21s-kernel-preflight.yml'
       - 'scripts/a21s-apply-susfs.sh'
+      - 'scripts/a21s-port-susfs.py'
   workflow_dispatch:
     inputs:
       defconfig:
@@ -22,6 +23,10 @@ jobs:
         with:
           persist-credentials: false
           submodules: recursive
+      - name: Verify SUSFS patch scripts before installing toolchain
+        run: |
+          bash -n scripts/a21s-apply-susfs.sh
+          python3 -m py_compile scripts/a21s-port-susfs.py
       - name: Install cross-compiler and dependencies
         run: |
           sudo apt-get update
