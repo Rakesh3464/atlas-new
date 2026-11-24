@@ -1,0 +1,46 @@
+name: A21s SUSFS 4.19 patch dry run
+on:
+  workflow_dispatch:
+  push:
+    branches: [a21s-419-ksu-susfs]
+jobs:
+  dry-run:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Fetch pinned non-GKI 4.19 SUSFS reference
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p report
+          git clone --no-checkout https://gitlab.com/simonpunk/susfs4ksu.git /tmp/susfs4ksu
+          git -C /tmp/susfs4ksu checkout --detach 001e69919c6271f690fd00b17e4c721c9e599152
+          git -C /tmp/susfs4ksu rev-parse HEAD > report/susfs-revision.txt
+          find /tmp/susfs4ksu/kernel_patches -maxdepth 4 -type f | sort > report/reference-files.txt
+      - name: Dry-run kernel and KernelSU patch application
+        shell: bash
+        run: |
+          mkdir -p report
+          KPATCH=/tmp/susfs4ksu/kernel_patches/50_add_susfs_in_kernel-4.19.patch
+          if [ -f "$KPATCH" ]; then
+            patch --dry-run -p1 < "$KPATCH" > report/kernel-patch-dry-run.txt 2>&1
+            echo $? > report/kernel-patch-exit-code.txt
+          else
+            echo "Missing expected 4.19 kernel patch" > report/kernel-patch-dry-run.txt
+          fi
+          find /tmp/susfs4ksu/kernel_patches/KernelSU -maxdepth 2 -name '*.patch' -print > report/ksu-patch-candidates.txt 2>&1 || true
+          KSUPATCH=/tmp/susfs4ksu/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch
+          if [ -f "$KSUPATCH" ] && [ -d KernelSU/kernel ]; then
+            (cd KernelSU && patch --dry-run -p1 < "$KSUPATCH") > report/ksu-patch-dry-run.txt 2>&1
+            echo $? > report/ksu-patch-exit-code.txt
+          else
+            echo "KernelSU patch or expected source layout missing" > report/ksu-patch-dry-run.txt
+          fi
+          printf '%s\n' 'DRY RUN ONLY. Reference is SUSFS 1.5.5 for kernel 4.19, NOT SUSFS 2.4.0. No patches were applied and no Image was built.' > report/NOTICE.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: a21s-susfs-419-patch-dry-run
+          path: report/
