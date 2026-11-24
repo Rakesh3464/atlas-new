@@ -16,6 +16,9 @@ jobs:
           set -euo pipefail
           mkdir -p report
           git submodule status > report/submodules.txt
+          git -C KernelSU rev-parse HEAD > report/ksu-revision.txt 2>&1 || true
+          find KernelSU -maxdepth 3 -type d | sort | head -100 > report/ksu-directories.txt
+          find KernelSU -maxdepth 4 -type f | grep -E '(Kconfig|Makefile|setup.sh|susfs)' | head -120 > report/ksu-integration-candidates.txt || true
           find KernelSU -maxdepth 4 -type f \( -name Kconfig -o -name Makefile \) | sort > report/ksu-build-files.txt || true
           find drivers/kernelsu -maxdepth 2 -type f 2>/dev/null | head -40 > report/driver-ksu-files.txt || true
           grep -n 'kernelsu' drivers/Kconfig drivers/Makefile > report/ksu-references.txt || true
