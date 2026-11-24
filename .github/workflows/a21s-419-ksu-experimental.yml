@@ -1,0 +1,52 @@
+name: A21s 4.19 KernelSU experimental compile
+on:
+  workflow_dispatch:
+  push:
+    branches: [a21s-419-ksu-susfs]
+jobs:
+  ksu:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Install build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bc bison flex build-essential libssl-dev libelf-dev clang lld llvm python3 ccache
+      - name: Wire existing KernelSU source into kernel build
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p logs
+          test -f KernelSU/kernel/Kconfig
+          test -f KernelSU/kernel/Makefile
+          test ! -e drivers/kernelsu
+          ln -s ../../KernelSU/kernel drivers/kernelsu
+          test -f drivers/kernelsu/Kconfig
+          test -f drivers/kernelsu/Makefile
+          git -C KernelSU rev-parse HEAD | tee logs/ksu-revision.txt
+          echo 'Temporary CI symlink; no source files or master branch modified.' | tee logs/integration.txt
+      - name: Configure and build KernelSU-enabled Image
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p logs
+          make O=out ARCH=arm64 LLVM=1 exynos850-a21snsxx_defconfig 2>&1 | tee logs/config.log
+          scripts/config --file out/.config -e KSU
+          make O=out ARCH=arm64 LLVM=1 olddefconfig 2>&1 | tee logs/olddefconfig.log
+          grep '^CONFIG_KSU=y' out/.config | tee logs/ksu-enabled.txt
+          make -j2 O=out ARCH=arm64 LLVM=1 Image 2>&1 | tee logs/build.log
+          test -s out/arch/arm64/boot/Image
+          sha256sum out/arch/arm64/boot/Image | tee logs/image-sha256.txt
+      - name: Upload diagnostic logs and experimental Image
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: a21s-419-ksu-experimental
+          path: |
+            logs/
+            out/.config
+            out/arch/arm64/boot/Image
+          if-no-files-found: ignore
