@@ -49,7 +49,7 @@ jobs:
           set -o pipefail
           mkdir -p logs
           make O=out ARCH=arm64 LLVM=1 exynos850-a21snsxx_defconfig 2>&1 | tee logs/config.log
-          scripts/config --file out/.config -e KSU
+          bash scripts/config --file out/.config -e KSU
           make O=out ARCH=arm64 LLVM=1 olddefconfig 2>&1 | tee logs/olddefconfig.log
           grep '^CONFIG_KSU=y' out/.config | tee logs/ksu-enabled.txt
           make -j2 O=out ARCH=arm64 LLVM=1 Image 2>&1 | tee logs/build.log
