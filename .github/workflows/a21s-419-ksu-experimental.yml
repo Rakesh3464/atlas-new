@@ -20,10 +20,25 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p logs
-          test -f KernelSU/kernel/Kconfig
-          test -f KernelSU/kernel/Makefile
-          test ! -e drivers/kernelsu
-          ln -s ../../KernelSU/kernel drivers/kernelsu
+          echo "KernelSU source candidates:" | tee logs/wiring.txt
+          ls -ld KernelSU KernelSU/kernel drivers/kernelsu 2>&1 | tee -a logs/wiring.txt || true
+          find KernelSU -maxdepth 3 -name Kconfig -o -name Makefile | head -60 | tee -a logs/wiring.txt
+          if [ ! -f KernelSU/kernel/Kconfig ] || [ ! -f KernelSU/kernel/Makefile ]; then
+            echo 'ERROR: KernelSU/kernel build files absent' | tee -a logs/wiring.txt
+            exit 1
+          fi
+          if [ -L drivers/kernelsu ]; then
+            echo 'Existing drivers/kernelsu symlink detected' | tee -a logs/wiring.txt
+          elif [ -d drivers/kernelsu ]; then
+            echo 'Existing drivers/kernelsu directory detected; preserving its contents' | tee -a logs/wiring.txt
+            if [ ! -f drivers/kernelsu/Kconfig ] || [ ! -f drivers/kernelsu/Makefile ]; then
+              echo 'ERROR: existing directory lacks required build files; manual integration needed' | tee -a logs/wiring.txt
+              exit 1
+            fi
+          else
+            ln -s ../../KernelSU/kernel drivers/kernelsu
+            echo 'Created temporary drivers/kernelsu symlink' | tee -a logs/wiring.txt
+          fi
           test -f drivers/kernelsu/Kconfig
           test -f drivers/kernelsu/Makefile
           git -C KernelSU rev-parse HEAD | tee logs/ksu-revision.txt
