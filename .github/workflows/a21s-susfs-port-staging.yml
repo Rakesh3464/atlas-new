@@ -1,6 +1,10 @@
 name: A21s SUSFS 4.19 port staging
 on:
   workflow_dispatch:
+  push:
+    branches: [a21s-419-ksu-susfs]
+    paths:
+      - '.github/workflows/a21s-susfs-port-staging.yml'
 jobs:
   stage:
     runs-on: ubuntu-22.04
