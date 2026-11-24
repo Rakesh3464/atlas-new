@@ -1,0 +1,35 @@
+name: A21s SUSFS 2.4 compatibility audit
+on:
+  workflow_dispatch:
+  push:
+    branches: [a21s-419-ksu-susfs]
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Inspect A21s 4.19 KernelSU and SUSFS prerequisites
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p report
+          make -s kernelversion | tee report/kernel-version.txt
+          git submodule status | tee report/submodules.txt
+          grep -n 'kernelsu' drivers/Kconfig drivers/Makefile > report/ksu-wiring.txt || true
+          find KernelSU -maxdepth 5 -iname '*susfs*' -print > report/ksu-susfs-files.txt || true
+          find fs include/linux -iname '*susfs*' -print > report/kernel-susfs-files.txt || true
+          grep -RInE 'CONFIG_KSU_SUSFS|CONFIG_SUSFS|susfs_' KernelSU/kernel fs/Kconfig fs/Makefile include/linux 2>/dev/null | head -120 > report/susfs-references.txt || true
+          for file in fs/namespace.c fs/open.c fs/stat.c fs/readdir.c fs/proc/cmdline.c fs/exec.c; do
+            if test -f "$file"; then echo "$file PRESENT"; else echo "$file MISSING"; fi
+          done > report/patch-targets.txt
+          if test -f KernelSU/kernel/Kconfig; then
+            grep -nE 'config KSU|SUSFS' KernelSU/kernel/Kconfig > report/ksu-config-options.txt || true
+          fi
+          printf '%s\n' 'Audit only: no SUSFS v2.4 code was merged, compiled or validated.' > report/NOTICE.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: a21s-susfs-compatibility-audit
+          path: report/
