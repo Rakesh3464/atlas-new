@@ -1,0 +1,36 @@
+name: A21s SUSFS conflict source context
+on:
+  workflow_dispatch:
+  push:
+    branches: [a21s-419-ksu-susfs]
+    paths:
+      - '.github/workflows/a21s-susfs-conflict-context.yml'
+jobs:
+  collect:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Capture exact source context for manual SUSFS backport
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p report/source report/ksu-source
+          for f in fs/namespace.c fs/proc/task_mmu.c include/linux/mount.h include/linux/sched.h kernel/sys.c; do
+            mkdir -p "report/source/$(dirname "$f")"
+            cp "$f" "report/source/$f"
+          done
+          for f in kernel/Kconfig kernel/Makefile kernel/ksu.c kernel/selinux/rules.c kernel/selinux/selinux.c kernel/selinux/selinux.h; do
+            if test -f "KernelSU/$f"; then
+              mkdir -p "report/ksu-source/$(dirname "$f")"
+              cp "KernelSU/$f" "report/ksu-source/$f"
+            fi
+          done
+          find KernelSU/kernel -maxdepth 2 -type f | sort > report/ksu-file-layout.txt
+          git -C KernelSU rev-parse HEAD > report/ksu-revision.txt
+          printf '%s\n' 'Source context only. No SUSFS patch applied. No kernel image built.' > report/NOTICE.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: a21s-susfs-conflict-source-context
+          path: report/
