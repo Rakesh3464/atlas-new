@@ -25,16 +25,22 @@ jobs:
           mkdir -p report
           KPATCH=/tmp/susfs4ksu/kernel_patches/50_add_susfs_in_kernel-4.19.patch
           if [ -f "$KPATCH" ]; then
-            patch --dry-run -p1 < "$KPATCH" > report/kernel-patch-dry-run.txt 2>&1
-            echo $? > report/kernel-patch-exit-code.txt
+            set +e
+            patch --batch --dry-run -p1 < "$KPATCH" > report/kernel-patch-dry-run.txt 2>&1
+            rc=$?
+            set -e
+            echo "$rc" > report/kernel-patch-exit-code.txt
           else
             echo "Missing expected 4.19 kernel patch" > report/kernel-patch-dry-run.txt
           fi
           find /tmp/susfs4ksu/kernel_patches/KernelSU -maxdepth 2 -name '*.patch' -print > report/ksu-patch-candidates.txt 2>&1 || true
           KSUPATCH=/tmp/susfs4ksu/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch
           if [ -f "$KSUPATCH" ] && [ -d KernelSU/kernel ]; then
-            (cd KernelSU && patch --dry-run -p1 < "$KSUPATCH") > report/ksu-patch-dry-run.txt 2>&1
-            echo $? > report/ksu-patch-exit-code.txt
+            set +e
+            (cd KernelSU && patch --batch --dry-run -p1 < "$KSUPATCH") > report/ksu-patch-dry-run.txt 2>&1
+            rc=$?
+            set -e
+            echo "$rc" > report/ksu-patch-exit-code.txt
           else
             echo "KernelSU patch or expected source layout missing" > report/ksu-patch-dry-run.txt
           fi
